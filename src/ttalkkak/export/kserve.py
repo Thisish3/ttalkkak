@@ -33,7 +33,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
                     {"name": "VLLM_ADDITIONAL_ARGS",
                      "value": shlex.join(engine_args(c))},
                 ],
-                "resources": {"limits": gpu, "requests": gpu},
+                "resources": {"limits": gpu, "requests": dict(gpu)},
             }]},
         },
     }  # fmt: skip

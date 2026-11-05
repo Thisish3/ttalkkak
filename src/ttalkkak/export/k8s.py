@@ -18,7 +18,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
             "replicas": 1,
             "selector": {"matchLabels": {"app.kubernetes.io/name": name}},
             "template": {
-                "metadata": {"labels": labels},
+                "metadata": {"labels": dict(labels)},
                 "spec": {
                     "containers": [{
                         "name": "server",
@@ -29,7 +29,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
                             "name": "hf-token", "key": "HF_TOKEN"}}}],
                         "readinessProbe": {"httpGet": {"path": "/health", "port": port},
                                            "periodSeconds": 10, "failureThreshold": 90},
-                        "resources": {"limits": gpu, "requests": gpu},
+                        "resources": {"limits": gpu, "requests": dict(gpu)},
                         "volumeMounts": [{"name": "shm", "mountPath": "/dev/shm"}],
                     }],
                     "volumes": [{"name": "shm",
@@ -41,7 +41,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     service = {
         "apiVersion": "v1",
         "kind": "Service",
-        "metadata": {"name": name, "labels": labels},
+        "metadata": {"name": name, "labels": dict(labels)},
         "spec": {"selector": {"app.kubernetes.io/name": name},
                  "ports": [{"name": "http", "port": port, "targetPort": port}]},
     }  # fmt: skip

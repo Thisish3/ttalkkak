@@ -118,3 +118,9 @@ def test_no_token_values_in_output(mod, monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "hf_SECRET_VALUE_123")
     for text in mod.render(VN).values():
         assert "hf_SECRET_VALUE_123" not in text
+
+
+@pytest.mark.parametrize("mod,b", [(k8s, VN), (kserve, VN), (llmd, SN)])
+def test_no_yaml_anchors(mod, b):
+    for text in mod.render(b).values():
+        assert "&id" not in text and "*id" not in text

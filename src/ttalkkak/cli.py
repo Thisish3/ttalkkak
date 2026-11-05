@@ -81,3 +81,22 @@ def chat(run: str = typer.Option(...), skills: str = typer.Option("")) -> None:
                 await adapter.__aexit__(None, None, None)
 
     asyncio.run(loop())
+
+
+@app.command()
+def export(
+    run: str = typer.Option(...),
+    target: str = typer.Option(..., help="k8s | kserve | llmd | dynamo"),
+    out: str = typer.Option(...),
+    image: str | None = typer.Option(None, help="override image (required for dynamo)"),
+    force: bool = False,
+) -> None:
+    from ttalkkak.export import write_export
+
+    try:
+        written = write_export(ROOT / "runs" / run, target, Path(out), force, image)
+    except TtalkkakError as err:
+        typer.echo(f"오류: {err}", err=True)
+        raise typer.Exit(err.exit_code) from err
+    for p in written:
+        typer.echo(str(p))

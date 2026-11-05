@@ -54,7 +54,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
             "args": args,
             "env": [{"name": "HF_TOKEN", "valueFrom": {"secretKeyRef": {
                 "name": "llm-d-hf-token", "key": "HF_TOKEN"}}}],
-            "resources": {"limits": gpu, "requests": gpu},
+            "resources": {"limits": gpu, "requests": dict(gpu)},
         }]}}},
     }  # fmt: skip
     if image:
