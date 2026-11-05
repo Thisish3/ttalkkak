@@ -1,0 +1,4 @@
+[{"_note": "SYNTHETIC: amd-smi static --asic --vram --json shape assumed; replace from MI300X (Task 8)",
+  "gpu": 0,
+  "asic": {"market_name": "AMD Instinct MI300X", "target_graphics_version": "gfx942"},
+  "vram": {"type": "HBM", "size": {"value": 196592, "unit": "MB"}}}]

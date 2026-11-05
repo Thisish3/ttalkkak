@@ -49,3 +49,36 @@ def test_gated_model_is_a_clear_error():
 def test_nim_model_skips_hf_and_gpu():
     r = probe("nim:meta/llama-3.1-8b-instruct", api=object(), run=None)
     assert r.remote == "nim:meta/llama-3.1-8b-instruct" and r.model is None
+
+
+def test_parse_amd_smi():
+    from ttalkkak.probe.gpu import parse_amd_smi
+
+    g = parse_amd_smi((FIX / "amd/amd_smi_static.json").read_text())
+    assert g.vendor == "amd" and g.arch == "gfx942"
+    assert g.name == "AMD Instinct MI300X" and g.memory_mib == 196592
+
+
+def test_detect_falls_back_to_amd_smi():
+    import subprocess
+
+    from ttalkkak.probe.gpu import detect_gpu
+
+    amd = (FIX / "amd/amd_smi_static.json").read_text()
+
+    def run(cmd, **kw):
+        if cmd[0] == "nvidia-smi":
+            raise FileNotFoundError
+        return subprocess.CompletedProcess(cmd, 0, stdout=amd, stderr="")
+
+    g = detect_gpu(run)
+    assert g is not None and g.vendor == "amd"
+
+
+def test_no_gpu_tools_means_none():
+    from ttalkkak.probe.gpu import detect_gpu
+
+    def run(cmd, **kw):
+        raise FileNotFoundError
+
+    assert detect_gpu(run) is None
