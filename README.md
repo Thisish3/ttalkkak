@@ -2,7 +2,7 @@
 
 **Agent-ready LLM serving.** Pick a model and the skills your agent needs; ttalkkak picks a vLLM configuration for them, launches it, checks that the settings were actually applied and that accuracy and tool calling still work, and hands a LangGraph agent the endpoint.
 
-> **상태: 1단계 MVP 구현 완료, GPU 실측 전.** 단위 테스트 86개는 GPU 없이 통과하지만, RTX 3060 Ti에서 실제 vLLM을 띄우는 end-to-end(계획 Task 15)는 아직 하지 않았습니다. `tests/fixtures/` 중 `SYNTHETIC` 표시가 있는 파일 3개는 그때 실측으로 교체합니다.
+> **상태: 1~4단계 구현 완료, GPU 실측 전.** 단위 테스트 175개는 GPU 없이 통과하지만, 실제 GPU(RTX 3060 Ti, AMD MI300X)에서 엔진을 띄우는 end-to-end와 실제 클러스터 적용은 아직 하지 않았습니다. `tests/fixtures/` 중 `SYNTHETIC` 표시가 있는 파일은 그때 실측으로 교체합니다.
 
 ## 왜 만드나
 
@@ -48,6 +48,27 @@ uv run ttalkkak up --model Qwen/Qwen2.5-1.5B-Instruct --skills code-exec
 uv run ttalkkak chat --run <runs 아래 id> --skills code-exec
 ```
 
+엔진은 vLLM(c1 KV auto, c2 KV fp8)과 SGLang(c3)을 모두 후보로 돌리고, NVIDIA는 `nvidia-smi`, AMD는 `amd-smi`로 감지해 이미지와 GPU 플래그를 바꿉니다.
+
+### 배포 매니페스트로 내보내기
+
+```bash
+uv run ttalkkak export --run <id> --target k8s     --out deploy/   # Deployment + Service
+uv run ttalkkak export --run <id> --target kserve  --out deploy/   # LLMInferenceService (vLLM)
+uv run ttalkkak export --run <id> --target llmd    --out deploy/   # llm-d v1.0.0 kustomize overlay
+uv run ttalkkak export --run <id> --target dynamo  --out deploy/ --image <dynamo runtime image>
+```
+
+검증을 통과한 후보의 인자와 이미지를 그대로 씁니다. 각 디렉터리의 `README.md`에 Secret 생성과 적용 명령이 있습니다.
+
+### 웹 화면
+
+```bash
+uv run ttalkkak ui        # http://127.0.0.1:8787
+```
+
+HF 모델 검색(가중치 기준으로 이 GPU에 들어가는지 표시), skill 선택, 실행과 단계 진행, 리포트, 내보내기를 브라우저에서 합니다. 기본으로 127.0.0.1에만 열고, 다른 Host 헤더와 다른 출처의 POST는 거부합니다.
+
 종료 코드: `0` 선택 성공, `1` 모든 후보 탈락, `2` 입력·모델 접근 오류, `3` Docker 사용 불가.
 
 NVIDIA NIM 호스팅 모델은 `--model nim:<model>`로 고르고 `NVIDIA_API_KEY`를 설정합니다. 이 경우 로컬 서빙 없이 에이전트 적합성 검사만 실행합니다(정확도 검사는 아직 제외).
@@ -88,22 +109,21 @@ uv run ruff check .
 
 GPU가 필요한 부분은 모두 주입 가능한 함수 뒤에 있고, 테스트는 가짜 Docker와 mock OpenAI 서버로 돌아갑니다. mock 서버는 정상 응답뿐 아니라 `<think>` 누출, 스트림 불일치, call 2개, 여러 청크로 쪼개진 인자처럼 일부러 망가뜨린 응답도 재생해서, 검사기가 그것을 잡아내는지 확인합니다.
 
-- 설계: [docs/specs/2026-11-05-ttalkkak-design.md](docs/specs/2026-11-05-ttalkkak-design.md)
-- 1단계 구현 계획: [docs/plans/2026-11-05-ttalkkak-stage1.md](docs/plans/2026-11-05-ttalkkak-stage1.md)
+- 단계별 설계와 계획: [docs/specs/](docs/specs/), [docs/plans/](docs/plans/)
 
 ## 로드맵
 
 | 단계 | 내용 |
 |---|---|
-| 1 (현재) | RTX 3060 Ti 8GB, vLLM, HF 모델 또는 NIM API, 기본 skill 3개, CLI |
-| 2 | SGLang 어댑터, AMD Developer Cloud MI300X |
-| 3 | K8s: 같은 결정을 llm-d / Dynamo / KServe 매니페스트로 출력, 실배포 1건 |
-| 4 | GUI: HF 모델 검색 → 실행 → 리포트 |
+| 1 (구현 완료) | RTX 3060 Ti 8GB, vLLM, HF 모델 또는 NIM API, 기본 skill 3개, CLI |
+| 2 (구현 완료) | SGLang 어댑터, AMD MI300X(ROCm) |
+| 3 (구현 완료) | `ttalkkak export`: k8s / KServe / llm-d / Dynamo 매니페스트 |
+| 4 (구현 완료) | `ttalkkak ui`: HF 모델 검색 → 실행 → 리포트 → 내보내기 |
+| 다음 | 각 단계 실측(3060 Ti, MI300X, 실제 클러스터, 브라우저) |
 
 ## 알려진 한계
 
 - GPU end-to-end 실측 전입니다. vLLM v0.33 로그 형식, 파서 이름, lm-eval 결과 형식은 소스와 `--help`로 확인했지만 실제 실행으로는 아직 확인하지 않았습니다.
-- 동률일 때 c1(KV auto)을 고릅니다. 설계 문서는 메모리 여유가 큰 쪽을 고르라고 하므로 고칠 예정입니다.
 - 잘못된 HF 모델 ID 형식이나 `config.json`이 없는 저장소는 아직 친절한 오류 대신 traceback으로 끝납니다.
 - 저장소 폴더에서 실행해야 기본 skill을 찾습니다.
 
