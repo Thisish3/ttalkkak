@@ -47,6 +47,7 @@ class Candidate(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     requires_accuracy: bool = False
+    baseline_only: bool = False  # 정확도 기준선만 재고 선택 대상이 아님
 
 
 class Plan(BaseModel):

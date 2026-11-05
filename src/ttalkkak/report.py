@@ -57,6 +57,8 @@ def render_report(
     for c in plan.candidates:
         for b in c.blockers:
             lines.append(f"- {c.id}: 계획 단계에서 제외 ({b})")
+        if c.blockers:
+            lines += [f"  - {r}" for r in c.reasons]
     lines += ["", "## 에이전트 검사"]
     for cid, v in by_v.items():
         for r in v.agent:

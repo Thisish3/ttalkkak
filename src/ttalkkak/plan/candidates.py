@@ -3,6 +3,8 @@ from ttalkkak.plan.memory import kv_bytes_per_token, max_context_fit
 from ttalkkak.plan.parsers import parsers_for
 from ttalkkak.schemas import Candidate, Plan, ProbeResult, Requirements
 
+BASELINE_LEN = 4096  # gsm8k 프롬프트 + 생성이 들어가는 길이
+
 
 def _parser_args(family: str, req: Requirements) -> tuple[dict, list[str]]:
     args: dict = {}
@@ -12,12 +14,14 @@ def _parser_args(family: str, req: Requirements) -> tuple[dict, list[str]]:
         if entry and entry.tool:
             args |= {"enable_auto_tool_choice": True, "tool_call_parser": entry.tool}
         else:
-            blockers.append(f"no tool parser known for {family}")
+            who = ", ".join(req.sources.get("tool_calling", [])) or "요청"
+            blockers.append(f"no tool parser known for {family} (needed by {who})")
     if req.flags.get("reasoning"):
         if entry and entry.reasoning:
             args["reasoning_parser"] = entry.reasoning
         else:
-            blockers.append(f"no reasoning parser known for {family}")
+            who = ", ".join(req.sources.get("reasoning", [])) or "요청"
+            blockers.append(f"no reasoning parser known for {family} (needed by {who})")
     return args, blockers
 
 
@@ -61,5 +65,20 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
                 blockers=blockers,
                 requires_accuracy=(kv == "fp8"),
             )
+        )
+    c1 = out[0]
+    fp8_runnable = any(not c.blockers for c in out[1:])
+    if c1.blockers and fp8_runnable and c1.args["max_model_len"] >= BASELINE_LEN:
+        out.insert(
+            0,
+            c1.model_copy(
+                update={
+                    "id": "c0",
+                    "args": c1.args | {"max_model_len": BASELINE_LEN},
+                    "blockers": [],
+                    "reasons": ["정확도 기준선 전용: KV auto, 짧은 문맥"],
+                    "baseline_only": True,
+                }
+            ),
         )
     return Plan(candidates=out, requirements=req)

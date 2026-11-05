@@ -44,5 +44,7 @@ def python(code: str) -> str:
 
 
 if __name__ == "__main__":
-    subprocess.run(["docker", "pull", IMAGE], capture_output=True, timeout=600)
+    subprocess.run(
+        ["docker", "pull", IMAGE], capture_output=True, timeout=600, check=False
+    )
     mcp.run()

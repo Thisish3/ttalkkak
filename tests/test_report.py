@@ -56,3 +56,21 @@ def test_report_has_warning_table_and_failure():
     assert "oom" in md and "CUDA out of memory" in md
     assert "tool_calling ← web-fetch" in md
     assert 'base_url="http://h:8000/v1"' in md
+
+
+def test_report_shows_reasons_of_blocked_candidates():
+    plan = Plan(
+        requirements=Requirements(),
+        candidates=[
+            Candidate(
+                id="c1",
+                engine="vllm",
+                model_id="m",
+                args={},
+                blockers=["max_model_len 100 < 필요 32768"],
+                reasons=["file-qa의 min_context 32768 때문에 불가"],
+            )
+        ],
+    )
+    md = render_report(plan, [], Verification(verdicts=[]), Pick(chosen=None))
+    assert "file-qa의 min_context 32768 때문에 불가" in md

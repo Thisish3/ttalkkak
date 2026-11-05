@@ -38,7 +38,10 @@ def test_tool_calling_sets_parser():
 def test_unknown_family_blocks_when_tools_needed():
     m = M.model_copy(update={"family": "unknownlm"})
     p = make_plan(ProbeResult(model=m, gpu=G), req(flags={"tool_calling": True}))
-    assert all("no tool parser known for unknownlm" in c.blockers for c in p.candidates)
+    assert all(
+        any("no tool parser known for unknownlm" in b for b in c.blockers)
+        for c in p.candidates
+    )
 
 
 def test_min_context_too_big_blocks_and_names_skill():
@@ -54,3 +57,28 @@ def test_max_model_len_never_exceeds_model_limit():
     big_gpu = G.model_copy(update={"memory_mib": 192 * 1024})
     p = make_plan(ProbeResult(model=M, gpu=big_gpu), req())
     assert all(c.args["max_model_len"] == 32768 for c in p.candidates)
+
+
+def test_parser_blocker_names_the_skill():
+    m = M.model_copy(update={"family": "unknownlm"})
+    p = make_plan(
+        ProbeResult(model=m, gpu=G),
+        req(flags={"tool_calling": True}, sources={"tool_calling": ["web-fetch"]}),
+    )
+    assert any("web-fetch" in b for b in p.candidates[0].blockers)
+
+
+def test_baseline_only_candidate_when_auto_kv_cannot_fit_context():
+    # auto KV fits ~40k tokens? use a context only fp8 can hold
+    from ttalkkak.plan.memory import max_context_fit
+
+    auto_fit = max_context_fit(M, G, "auto")
+    p = make_plan(
+        ProbeResult(model=M, gpu=G),
+        req(min_context=auto_fit + 1, sources={"min_context": ["file-qa"]}),
+    )
+    by_id = {c.id: c for c in p.candidates}
+    assert by_id["c1"].blockers and not by_id["c2"].blockers
+    base = by_id["c0"]
+    assert base.baseline_only and not base.blockers
+    assert base.args["kv_cache_dtype"] == "auto" and base.args["max_model_len"] == 4096
