@@ -1,7 +1,13 @@
 import shlex
 
 from ttalkkak.errors import TtalkkakError
-from ttalkkak.export.common import RunBundle, dump, engine_args, gpu_key
+from ttalkkak.export.common import (
+    RunBundle,
+    dump,
+    engine_args,
+    gpu_key,
+    resource_name,
+)
 
 _IMAGE = {
     "nvidia": "ghcr.io/llm-d/llm-d-cuda:v0.9.0",
@@ -19,7 +25,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     svc = {
         "apiVersion": "serving.kserve.io/v1alpha2",
         "kind": "LLMInferenceService",
-        "metadata": {"name": f"ttalkkak-{c.id}", "labels": {"ttalkkak.run": b.run_id}},
+        "metadata": {"name": resource_name(b), "labels": {"ttalkkak.run": b.run_id}},
         "spec": {
             "model": {"uri": f"hf://{c.model_id}", "name": c.model_id},
             "replicas": 1,

@@ -1,6 +1,6 @@
 from ttalkkak.engines import ADAPTERS
 from ttalkkak.errors import TtalkkakError
-from ttalkkak.export.common import RunBundle, dump
+from ttalkkak.export.common import RunBundle, dump, resource_name
 
 _LAUNCHER = ["python3", "-m", "sglang.launch_server"]
 _DROP_WITH_VALUE = {"--host", "--port"}
@@ -42,7 +42,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     graph = {
         "apiVersion": "nvidia.com/v1beta1",
         "kind": "DynamoGraphDeployment",
-        "metadata": {"name": f"ttalkkak-{c.id}", "labels": {"ttalkkak.run": b.run_id}},
+        "metadata": {"name": resource_name(b), "labels": {"ttalkkak.run": b.run_id}},
         "spec": {"components": [
             {"name": "Frontend", "type": "frontend", "replicas": 1,
              "podTemplate": {"spec": {"containers": [

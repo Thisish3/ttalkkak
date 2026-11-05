@@ -1,4 +1,11 @@
-from ttalkkak.export.common import RunBundle, dump, engine_args, gpu_key
+from ttalkkak.export.common import (
+    RunBundle,
+    dump,
+    engine_args,
+    gpu_key,
+    resource_name,
+)
+from ttalkkak.platform import Platform
 
 REF = "v1.0.0"
 _REPO = "https://github.com/llm-d/llm-d//guides/recipes/modelserver"
@@ -36,7 +43,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
         "resources": [f"{_REPO}/base/single-host/default?ref={REF}"],
-        "namePrefix": f"ttalkkak-{c.id}-",
+        "namePrefix": f"{resource_name(b)}-",
         "components": [
             f"{_REPO}/components/images/{_COMPONENT[(b.vendor, c.engine)]}?ref={REF}"
         ],
@@ -55,8 +62,16 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
             "env": [{"name": "HF_TOKEN", "valueFrom": {"secretKeyRef": {
                 "name": "llm-d-hf-token", "key": "HF_TOKEN"}}}],
             "resources": {"limits": gpu, "requests": dict(gpu)},
+            # same overrides as llm-d's optimized-baseline guide: the base probe
+            # defaults (~30s) restart the pod before the model finishes loading
+            "startupProbe": {"initialDelaySeconds": 15, "periodSeconds": 30,
+                             "timeoutSeconds": 5, "failureThreshold": 120},
+            "readinessProbe": {"periodSeconds": 5, "timeoutSeconds": 2,
+                               "failureThreshold": 3},
         }]}}},
     }  # fmt: skip
-    if image:
-        patch["spec"]["template"]["spec"]["containers"][0]["image"] = image
+    # pin the engine image the run verified (llm-d v1.0.0 components ship older ones)
+    patch["spec"]["template"]["spec"]["containers"][0]["image"] = image or Platform(
+        vendor=b.vendor
+    ).image(c.engine)
     return {"kustomization.yaml": dump([kustomization]), "patch.yaml": dump([patch])}

@@ -13,7 +13,10 @@ _SECRET = {
 }
 _NOTES = {
     "k8s": "Any cluster with a GPU device plugin.",
-    "kserve": "Needs KServe with the LLMInferenceService CRD (v1alpha2).",
+    "kserve": "Needs KServe with the LLMInferenceService CRD (v1alpha2), plus Gateway "
+              "API and the Inference Extension for the router. The serving image is "
+              "llm-d's (ghcr.io/llm-d/llm-d-*:v0.9.0), not the vLLM version the run "
+              "verified; re-check the flags if versions differ.",
     "llmd": "Builds on llm-d v1.0.0 recipes fetched by kustomize; router/EPP is not "
             "included (see llm-d guides/optimized-baseline/router).",
     "dynamo": "Needs the Dynamo operator (DynamoGraphDeployment v1beta1).",

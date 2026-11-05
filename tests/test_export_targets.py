@@ -124,3 +124,56 @@ def test_no_token_values_in_output(mod, monkeypatch):
 def test_no_yaml_anchors(mod, b):
     for text in mod.render(b).values():
         assert "&id" not in text and "*id" not in text
+
+
+def test_llmd_patch_overrides_startup_probe_like_upstream():
+    c = container(docs(llmd.render(VN), "patch.yaml")[0])
+    assert c["startupProbe"] == {
+        "initialDelaySeconds": 15,
+        "periodSeconds": 30,
+        "timeoutSeconds": 5,
+        "failureThreshold": 120,
+    }
+    assert c["readinessProbe"]["failureThreshold"] == 3
+
+
+def test_llmd_pins_the_engine_image_the_run_verified():
+    assert container(docs(llmd.render(VN), "patch.yaml")[0])["image"] == (
+        "vllm/vllm-openai:v0.33.0"
+    )
+    sa = SN.model_copy(update={"vendor": "amd"})
+    assert container(docs(llmd.render(sa), "patch.yaml")[0])["image"] == (
+        "lmsysorg/sglang:v0.5.23-rocm720-mi30x"
+    )
+
+
+@pytest.mark.parametrize(
+    "mod,b,name_of",
+    [
+        (
+            kserve,
+            VN,
+            lambda f: docs(f, "llminferenceservice.yaml")[0]["metadata"]["name"],
+        ),
+        (llmd, VN, lambda f: docs(f, "kustomization.yaml")[0]["namePrefix"]),
+        (k8s, VN, lambda f: docs(f, "deployment.yaml")[0]["metadata"]["name"]),
+    ],
+)
+def test_resource_names_include_run_id(mod, b, name_of):
+    other = b.model_copy(update={"run_id": "20261106-120000"})
+    a, z = name_of(mod.render(b)), name_of(mod.render(other))
+    assert a != z and "20261106-120000" in z
+
+
+def test_dynamo_name_includes_run_id():
+    other = VN.model_copy(update={"run_id": "20261106-120000"})
+    d = docs(dynamo.render(other, image="x"), "dynamo.yaml")[0]
+    assert "20261106-120000" in d["metadata"]["name"]
+
+
+def test_names_are_valid_dns_labels():
+    weird = VN.model_copy(update={"run_id": "My_Run.2026"})
+    n = docs(k8s.render(weird), "deployment.yaml")[0]["metadata"]["name"]
+    import re
+
+    assert re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", n) and len(n) <= 63

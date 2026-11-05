@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -52,6 +53,13 @@ def engine_args(c: Candidate) -> list[str]:
             continue
         out.append(a)
     return out
+
+
+def resource_name(b: "RunBundle") -> str:
+    """DNS-1123 label unique per run and candidate, e.g. ttalkkak-20261106-1200-c1."""
+    run = re.sub(r"[^a-z0-9-]+", "-", b.run_id.lower()).strip("-")
+    name = f"ttalkkak-{run}-{b.candidate.id}" if run else f"ttalkkak-{b.candidate.id}"
+    return name[:63].rstrip("-")
 
 
 def gpu_key(vendor: str) -> str:

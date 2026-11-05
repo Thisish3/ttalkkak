@@ -1,5 +1,5 @@
 from ttalkkak.engines import ADAPTERS
-from ttalkkak.export.common import RunBundle, dump, gpu_key
+from ttalkkak.export.common import RunBundle, dump, gpu_key, resource_name
 from ttalkkak.platform import Platform
 
 
@@ -7,7 +7,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     c = b.candidate
     adapter = ADAPTERS[c.engine]
     port = adapter.container_port
-    name = f"ttalkkak-{c.engine}-{c.id}"
+    name = resource_name(b)
     labels = {"app.kubernetes.io/name": name, "ttalkkak.run": b.run_id}
     gpu = {gpu_key(b.vendor): "1"}
     deployment = {
