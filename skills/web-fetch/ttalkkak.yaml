@@ -1,0 +1,4 @@
+requires: {tool_calling: true, streaming: true}
+min_context: 16384
+mcp_servers:
+  - {name: fetch, command: [uvx, mcp-server-fetch]}

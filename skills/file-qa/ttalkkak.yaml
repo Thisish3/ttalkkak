@@ -1,0 +1,4 @@
+requires: {tool_calling: true}
+min_context: 32768
+mcp_servers:
+  - {name: files, command: [uv, run, python, -m, ttalkkak.mcp_servers.files]}
