@@ -33,10 +33,8 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
         fit = max_context_fit(m, g, kv)
         length = min(m.max_position, fit)
         blockers = list(parser_blockers)
-        reasons = [
-            f"KV {kv}: {kv_bytes_per_token(m, kv)} B/token, "
-            f"들어가는 문맥 약 {fit} 토큰"
-        ]
+        per_token = kv_bytes_per_token(m, kv)
+        reasons = [f"KV {kv}: {per_token} B/token, 들어가는 문맥 약 {fit} 토큰"]
         if length < max(req.min_context, 1):
             blockers.append(f"max_model_len {length} < 필요 {req.min_context}")
             who = ", ".join(req.sources.get("min_context", [])) or "요청"
