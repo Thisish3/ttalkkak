@@ -1,0 +1,6 @@
+# model_type -> vLLM parser names (checked against vllm/tool_parsers/__init__.py and
+# vllm/reasoning/__init__.py at vLLM main 811622c; verify.agent confirms them live)
+qwen2: {tool: hermes, reasoning: null}
+qwen3: {tool: hermes, reasoning: qwen3}
+llama: {tool: llama3_json, reasoning: null}
+mistral: {tool: mistral, reasoning: null}
