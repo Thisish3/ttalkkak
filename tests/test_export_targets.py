@@ -1,0 +1,120 @@
+from pathlib import Path
+
+import pytest
+import yaml
+
+from ttalkkak.errors import TtalkkakError
+from ttalkkak.export import dynamo, k8s, kserve, llmd
+from ttalkkak.export.common import load_run
+
+RUNS = Path(__file__).parent / "fixtures/runs"
+VN, SN, VA = (load_run(RUNS / r) for r in ("vllm-nvidia", "sglang-nvidia", "vllm-amd"))
+MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+
+
+def docs(files, name):
+    return list(yaml.safe_load_all(files[name]))
+
+
+def container(d):
+    return d["spec"]["template"]["spec"]["containers"][0]
+
+
+def test_k8s_vllm_deployment_and_service():
+    files = k8s.render(VN)
+    dep, svc = docs(files, "deployment.yaml")[0], docs(files, "service.yaml")[0]
+    assert dep["kind"] == "Deployment" and svc["kind"] == "Service"
+    c = container(dep)
+    assert c["image"] == "vllm/vllm-openai:v0.33.0"
+    assert c["args"][:2] == ["--model", MODEL] and "--kv-cache-dtype" in c["args"]
+    assert c["ports"][0]["containerPort"] == 8000
+    assert c["readinessProbe"]["httpGet"]["path"] == "/health"
+    assert c["resources"]["limits"]["nvidia.com/gpu"] == "1"
+    assert c["env"][0]["valueFrom"]["secretKeyRef"]["name"] == "hf-token"
+    assert svc["spec"]["ports"][0]["port"] == 8000
+
+
+def test_k8s_sglang_uses_its_port_and_launcher():
+    c = container(docs(k8s.render(SN), "deployment.yaml")[0])
+    assert c["image"] == "lmsysorg/sglang:v0.5.23"
+    assert c["args"][:3] == ["python3", "-m", "sglang.launch_server"]
+    assert c["ports"][0]["containerPort"] == 30000
+
+
+def test_kserve_vllm():
+    d = docs(kserve.render(VN), "llminferenceservice.yaml")[0]
+    assert d["apiVersion"] == "serving.kserve.io/v1alpha2"
+    assert d["kind"] == "LLMInferenceService"
+    assert d["spec"]["model"]["uri"] == f"hf://{MODEL}"
+    c = d["spec"]["template"]["containers"][0]
+    extra = next(e["value"] for e in c["env"] if e["name"] == "VLLM_ADDITIONAL_ARGS")
+    assert "--kv-cache-dtype" in extra and "--tool-call-parser" in extra
+    assert "--model" not in extra and "--port" not in extra
+    assert c["image"] == "ghcr.io/llm-d/llm-d-cuda:v0.9.0"
+
+
+def test_kserve_amd_image_and_gpu_key():
+    c = docs(kserve.render(VA), "llminferenceservice.yaml")[0]["spec"]["template"][
+        "containers"
+    ][0]
+    assert c["image"] == "ghcr.io/llm-d/llm-d-rocm:v0.9.0"
+    assert c["resources"]["limits"]["amd.com/gpu"] == "1"
+
+
+def test_kserve_rejects_sglang():
+    with pytest.raises(TtalkkakError, match="vLLM"):
+        kserve.render(SN)
+
+
+def test_llmd_vllm_overlay():
+    files = llmd.render(VN)
+    k = docs(files, "kustomization.yaml")[0]
+    assert all("?ref=v1.0.0" in r for r in k["resources"] + k["components"])
+    assert k["resources"][0].endswith(
+        "guides/recipes/modelserver/base/single-host/default?ref=v1.0.0"
+    )
+    assert "images/gpu-vllm/release" in k["components"][0]
+    p = docs(files, "patch.yaml")[0]
+    assert p["kind"] == "Deployment" and p["metadata"]["name"] == "decode"
+    c = container(p)
+    assert c["name"] == "modelserver" and c["command"] == ["vllm", "serve"]
+    assert c["args"][0] == MODEL and "--model" not in c["args"]
+
+
+def test_llmd_sglang_on_amd_component_and_port():
+    sa = SN.model_copy(update={"vendor": "amd"})
+    files = llmd.render(sa)
+    k = docs(files, "kustomization.yaml")[0]
+    assert "images/amd-sglang/rocm720-mi30x" in k["components"][0]
+    c = container(docs(files, "patch.yaml")[0])
+    assert c["command"] == ["python3", "-m", "sglang.launch_server"]
+    assert "--port=8000" in c["args"] and f"--model-path={MODEL}" in c["args"]
+
+
+def test_dynamo_vllm_graph():
+    d = docs(dynamo.render(VN, image="nvcr.io/x/vllm-runtime:t"), "dynamo.yaml")[0]
+    assert d["apiVersion"] == "nvidia.com/v1beta1"
+    assert d["kind"] == "DynamoGraphDeployment"
+    comps = {c["type"]: c for c in d["spec"]["components"]}
+    w = comps["worker"]["podTemplate"]["spec"]["containers"][0]
+    assert w["command"] == ["python3", "-m", "dynamo.vllm"]
+    assert (
+        "--tool-call-parser" not in w["args"]
+        and "--enable-auto-tool-choice" not in w["args"]
+    )
+    assert w["args"][w["args"].index("--dyn-tool-call-parser") + 1] == "hermes"
+    assert w["args"][:2] == ["--model", MODEL]
+
+
+def test_dynamo_requires_image_and_nvidia():
+    with pytest.raises(TtalkkakError, match="--image"):
+        dynamo.render(VN)
+    with pytest.raises(TtalkkakError, match="NVIDIA"):
+        dynamo.render(VA, image="x")
+
+
+@pytest.mark.parametrize("mod", [k8s, kserve, llmd])
+def test_no_token_values_in_output(mod, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_SECRET_VALUE_123")
+    for text in mod.render(VN).values():
+        assert "hf_SECRET_VALUE_123" not in text
