@@ -38,7 +38,7 @@
 | `GET /api/runs/<id>` | `{done, running, error, pick, report_md}` |
 | `POST /api/runs/<id>/export` `{target, image?}` | 3단계 `write_export`로 `runs/<id>/export-<target>/`에 쓰고 파일 목록 반환 |
 
-모델 크기 추정: HF 모델 정보의 `safetensors.total`(파라미터 수)과 `safetensors.parameters`의 dtype별 개수로 바이트를 계산한다(BF16/F16 2바이트, I8/U8 1바이트, I32·F32 4바이트, AWQ/GPTQ 패킹은 I32로 기록되므로 그대로 계산). 정보가 없으면 `fits=null`(화면에는 "?"). 정확한 판정은 실행할 때 probe가 한다.
+모델 크기 추정: HF 모델 정보의 `safetensors.total`(파라미터 수)과 `safetensors.parameters`의 dtype별 개수로 바이트를 계산한다(BF16/F16 2바이트, I8/U8 1바이트, F32 4바이트. I32는 0.5바이트로 센다: HF는 AWQ/GPTQ의 int4 가중치를 풀어 놓은 개수로 I32에 기록한다(Qwen2.5-7B-Instruct-AWQ: I32 65.3억 + F16 10.9억 → 5.07 GiB, 실제 파일 5.19 GiB)). 정보가 없으면 `fits=null`(화면에는 "?"). 정확한 판정은 실행할 때 probe가 한다.
 
 ## 4. 오류 처리
 

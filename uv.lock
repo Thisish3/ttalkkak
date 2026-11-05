@@ -2690,7 +2690,9 @@ dependencies = [
     { name = "langgraph" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "starlette" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -2717,7 +2719,9 @@ requires-dist = [
     { name = "lm-eval", extras = ["api"], marker = "extra == 'measure'", specifier = "==0.4.13" },
     { name = "pydantic", specifier = "==2.14.3" },
     { name = "pyyaml" },
+    { name = "starlette", specifier = "==1.10.0" },
     { name = "typer", specifier = "==0.27.3" },
+    { name = "uvicorn", specifier = "==0.54.0" },
 ]
 provides-extras = ["measure"]
 

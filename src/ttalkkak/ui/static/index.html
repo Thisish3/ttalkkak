@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ttalkkak</title>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --mut:#57606a; --line:#d0d7de; --ok:#1a7f37; --bad:#cf222e; --acc:#0969da; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --mut:#8b949e; --line:#30363d; --ok:#3fb950; --bad:#f85149; --acc:#58a6ff; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; max-width:960px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:8px 0 4px } h2 { font-size:16px; margin:24px 0 8px }
+  .mut { color:var(--mut) } table { width:100%; border-collapse:collapse } td,th { border-bottom:1px solid var(--line); padding:6px; text-align:left }
+  input,select,button { font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg) }
+  button { cursor:pointer } button.primary { background:var(--acc); color:#fff; border-color:var(--acc) }
+  .ok { color:var(--ok) } .bad { color:var(--bad) } pre { white-space:pre-wrap; border:1px solid var(--line); border-radius:6px; padding:12px; overflow-x:auto }
+  .steps span { margin-right:10px } tr.sel td { background:rgba(9,105,218,.12) }
+</style>
+</head>
+<body>
+<h1>ttalkkak <span class="mut">딸깍</span></h1>
+<div class="mut" id="gpu">GPU 확인 중…</div>
+
+<h2>1. 모델</h2>
+<form id="search"><input id="q" placeholder="HF 모델 검색 (예: Qwen2.5 Instruct)" size="40"> <button>검색</button></form>
+<div id="models-err" class="bad"></div>
+<table id="models"><thead><tr><th>모델</th><th>다운로드</th><th>가중치</th><th>이 GPU</th></tr></thead><tbody></tbody></table>
+<div class="mut">또는 직접 입력: <input id="model" size="40" placeholder="org/model 또는 nim:..."></div>
+
+<h2>2. skill</h2>
+<div id="skills"></div>
+
+<h2>3. 실행</h2>
+<button class="primary" id="run">딸깍 실행</button> <span id="run-msg" class="mut"></span>
+<div class="steps" id="steps"></div>
+
+<h2>4. 결과</h2>
+<div id="runs"></div>
+<div id="export" hidden>
+  <select id="target"><option>k8s</option><option>kserve</option><option>llmd</option><option>dynamo</option></select>
+  <input id="image" placeholder="이미지 (dynamo는 필수)" size="30"> <button id="do-export">내보내기</button>
+  <span id="export-msg" class="mut"></span>
+</div>
+<pre id="report" hidden></pre>
+
+<script>
+const STAGES = ["probe", "plan", "launch", "verify", "pick"];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let current = null, poller = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json();
+  if (!r.ok) throw new Error(body && body.error ? body.error : r.status);
+  return body;
+}
+
+async function loadGpu() {
+  const g = await api("/api/gpu");
+  $("gpu").textContent = g ? `GPU: ${g.name} · ${(g.memory_mib / 1024).toFixed(0)} GiB · ${g.vendor}` : "GPU를 찾지 못했습니다 (NIM 모델은 사용 가능)";
+}
+
+async function loadSkills() {
+  const rows = await api("/api/skills");
+  $("skills").innerHTML = rows.map((s) =>
+    `<label><input type="checkbox" value="${esc(s.name)}"> <b>${esc(s.name)}</b> <span class="mut">${esc(s.description)}</span></label><br>`).join("");
+}
+
+$("search").onsubmit = async (e) => {
+  e.preventDefault();
+  $("models-err").textContent = "";
+  const tbody = $("models").querySelector("tbody");
+  tbody.innerHTML = "<tr><td colspan=4 class=mut>검색 중…</td></tr>";
+  try {
+    const rows = await api("/api/models?q=" + encodeURIComponent($("q").value));
+    tbody.innerHTML = rows.map((m) => {
+      const fit = m.fits === null ? '<span class="mut">?</span>' : m.fits ? '<span class="ok">들어감</span>' : '<span class="bad">안 들어감</span>';
+      const w = m.weight_gib === null ? "-" : m.weight_gib.toFixed(1) + " GiB";
+      return `<tr data-id="${esc(m.id)}"><td>${esc(m.id)}</td><td>${esc(m.downloads ?? "-")}</td><td>${w}</td><td>${fit}</td></tr>`;
+    }).join("") || "<tr><td colspan=4 class=mut>결과 없음</td></tr>";
+    tbody.querySelectorAll("tr[data-id]").forEach((tr) => tr.onclick = () => {
+      tbody.querySelectorAll("tr").forEach((x) => x.classList.remove("sel"));
+      tr.classList.add("sel");
+      $("model").value = tr.dataset.id;
+    });
+  } catch (err) { tbody.innerHTML = ""; $("models-err").textContent = err.message; }
+};
+
+$("run").onclick = async () => {
+  const model = $("model").value.trim();
+  if (!model) { $("run-msg").textContent = "모델을 고르세요"; return; }
+  const skills = [...document.querySelectorAll("#skills input:checked")].map((x) => x.value);
+  try {
+    const { run_id } = await api("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, skills }) });
+    $("run-msg").textContent = "실행 중: " + run_id;
+    watch(run_id);
+  } catch (err) { $("run-msg").textContent = err.message; }
+};
+
+function watch(run_id) {
+  current = run_id;
+  clearInterval(poller);
+  poller = setInterval(async () => {
+    const st = await api("/api/runs/" + run_id);
+    $("steps").innerHTML = STAGES.map((s) => `<span class="${st.done.includes(s) ? "ok" : "mut"}">${st.done.includes(s) ? "✓" : "·"} ${s}</span>`).join("");
+    if (!st.running) {
+      clearInterval(poller);
+      $("run-msg").textContent = st.error ? "오류: " + st.error.message : "완료: " + (st.pick && st.pick.chosen ? "선택 " + st.pick.chosen : "선택된 후보 없음");
+      show(st);
+      loadRuns();
+    }
+  }, 2000);
+}
+
+function show(st) {
+  current = st.run_id;
+  $("report").hidden = !st.report_md;
+  $("report").textContent = st.report_md || "";
+  $("export").hidden = !(st.pick && st.pick.chosen && st.pick.chosen !== "nim");
+}
+
+async function loadRuns() {
+  const rows = await api("/api/runs");
+  $("runs").innerHTML = rows.slice(0, 10).map((r) =>
+    `<button data-run="${esc(r.run_id)}">${esc(r.run_id)} · ${r.error ? "오류" : r.chosen ? "선택 " + r.chosen : r.running ? "실행 중" : "선택 없음"}</button> `).join("") || '<span class="mut">아직 실행한 run이 없습니다</span>';
+  $("runs").querySelectorAll("button").forEach((b) => b.onclick = async () => show(await api("/api/runs/" + b.dataset.run)));
+}
+
+$("do-export").onclick = async () => {
+  try {
+    const r = await api(`/api/runs/${current}/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: $("target").value, image: $("image").value }) });
+    $("export-msg").textContent = "저장: " + r.dir + " (" + r.files.join(", ") + ")";
+  } catch (err) { $("export-msg").textContent = err.message; }
+};
+
+loadGpu(); loadSkills(); loadRuns();
+</script>
+</body>
+</html>

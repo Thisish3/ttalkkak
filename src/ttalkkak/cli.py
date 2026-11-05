@@ -100,3 +100,36 @@ def export(
         raise typer.Exit(err.exit_code) from err
     for p in written:
         typer.echo(str(p))
+
+
+@app.command()
+def ui(host: str = "127.0.0.1", port: int = 8787) -> None:
+    """Open the local web UI (model search, run, report, export)."""
+    import uvicorn
+    from huggingface_hub import HfApi
+
+    from ttalkkak.probe.gpu import detect_gpu
+    from ttalkkak.ui.app import UiDeps, create_app
+
+    if host != "127.0.0.1":
+        typer.echo(
+            f"경고: {host}에 엽니다. 이 화면은 컨테이너를 띄우고 코드를 실행할 수 있으니 "
+            "신뢰하는 네트워크에서만 쓰세요.",
+            err=True,
+        )
+
+    def run_fn(model: str, skills: list[str], run_id: str) -> None:
+        deps = Deps(
+            probe=probe,
+            check_docker=check_docker,
+            launch=lambda c, a, p: launch(c, a, platform=p),
+            stop=stop,
+            client=httpx.Client(),
+            run_accuracy=run_accuracy,
+            run_perf=run_perf,
+        )
+        run_up(model, skills, ROOT / "runs", ROOT / "skills", deps, run_id=run_id)
+
+    deps = UiDeps(list_models=HfApi().list_models, detect_gpu=detect_gpu, run_fn=run_fn)
+    typer.echo(f"ttalkkak ui: http://{host}:{port}")
+    uvicorn.run(create_app(ROOT, deps), host=host, port=port, log_level="warning")

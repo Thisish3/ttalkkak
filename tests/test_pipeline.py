@@ -266,3 +266,10 @@ def test_sglang_auto_score_does_not_replace_vllm_baseline(tmp_path):
         M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu(), run_accuracy=acc)
     )
     assert "c2" not in p.rejected  # c2 (vLLM fp8) judged against vLLM c1 = 0.6
+
+
+def test_run_up_accepts_a_given_run_id(tmp_path):
+    run_dir, _ = run_up(
+        M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()), run_id="ui-run-1"
+    )
+    assert run_dir.name == "ui-run-1" and (run_dir / "pick.json").exists()

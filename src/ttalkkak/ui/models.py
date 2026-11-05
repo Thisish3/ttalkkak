@@ -4,12 +4,15 @@ from ttalkkak.plan.memory import usable_bytes
 from ttalkkak.schemas import GpuInfo
 
 _BYTES = {"BF16": 2, "F16": 2, "FP16": 2, "I8": 1, "U8": 1, "F8_E4M3": 1,
-          "F8_E5M2": 1, "I32": 4, "F32": 4}  # fmt: skip
+          "F8_E5M2": 1, "F32": 4,
+          # HF counts AWQ/GPTQ int4 weights (packed into int32) as unpacked I32
+          # parameters, so each is half a byte
+          "I32": 0.5}  # fmt: skip
 
 
 def weight_bytes(parameters: dict[str, int]) -> int:
     """Bytes of the safetensors weights; unknown dtypes count as 2 bytes."""
-    return sum(n * _BYTES.get(dtype.upper(), 2) for dtype, n in parameters.items())
+    return int(sum(n * _BYTES.get(dtype.upper(), 2) for dtype, n in parameters.items()))
 
 
 def search_models(

@@ -62,8 +62,9 @@ def run_up(
     skills_root: Path,
     deps: Deps,
     resume: str | None = None,
+    run_id: str | None = None,
 ) -> tuple[Path, Pick]:
-    run_dir = runs_root / (resume or time.strftime("%Y%m%d-%H%M%S"))
+    run_dir = runs_root / (resume or run_id or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
     state = (
         _load(run_dir, "state.json", RunState)
