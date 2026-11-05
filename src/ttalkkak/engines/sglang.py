@@ -87,10 +87,20 @@ class SglangAdapter:
                 evidence=f"/server_info kv_cache_dtype={raw}",
             )
         states = info.get("internal_states") or []
-        if states and states[0].get("max_total_num_tokens") is not None:
+        capacity = (
+            ((states[0] or {}).get("memory_usage") or {}).get("token_capacity")
+            if states
+            else None
+        )
+        if info.get("max_total_num_tokens") is not None:
             v["kv_cache_tokens"] = AppliedValue(
-                value=int(states[0]["max_total_num_tokens"]),
-                evidence="/server_info internal_states[0].max_total_num_tokens",
+                value=int(info["max_total_num_tokens"]),
+                evidence="/server_info max_total_num_tokens",
+            )
+        elif capacity is not None:
+            v["kv_cache_tokens"] = AppliedValue(
+                value=int(capacity),
+                evidence="/server_info internal_states[0].memory_usage.token_capacity",
             )
         if v["kv_cache_tokens"].value is None and (hit := _find(_LOG_TOKENS, logs)):
             v["kv_cache_tokens"] = AppliedValue(value=int(hit[0]), evidence=hit[1])

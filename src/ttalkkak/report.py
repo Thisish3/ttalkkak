@@ -47,6 +47,17 @@ def render_report(
             _fmt(v.accuracy if v else None),
         ]
         lines.append("| " + " | ".join(cells) + " |")
+    if any(
+        c.engine != "vllm" and c.requires_accuracy and not c.blockers
+        for c in plan.candidates
+    ):
+        lines += [
+            "",
+            (
+                "- 정확도 기준은 vLLM KV auto 후보(c0/c1) 점수입니다. 같은 모델·같은 평가 "
+                "세트이므로 엔진이 달라도 이 기준과 비교했습니다."
+            ),
+        ]
     lines += ["", "## 탈락·실패"]
     for cid, why in chosen.rejected.items():
         lines.append(f"- {cid}: {why}")

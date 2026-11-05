@@ -61,3 +61,44 @@ def test_collect_tolerates_missing_server_info():
 
     got = A.collect("http://x", httpx.Client(transport=httpx.MockTransport(handler)))
     assert "server_info" not in got
+
+
+def test_kv_tokens_from_top_level_then_internal_state_capacity():
+    top = A.read_applied("", {"server_info": {"max_total_num_tokens": 111}})
+    assert top.values["kv_cache_tokens"].value == 111
+    assert "max_total_num_tokens" in top.values["kv_cache_tokens"].evidence
+    inner = A.read_applied(
+        "",
+        {
+            "server_info": {
+                "internal_states": [{"memory_usage": {"token_capacity": 222}}]
+            }
+        },
+    )
+    assert inner.values["kv_cache_tokens"].value == 222
+
+
+def test_c3_leaves_memory_fraction_to_sglang():
+    from ttalkkak.plan.candidates import make_plan
+    from ttalkkak.schemas import GpuInfo, ModelInfo, ProbeResult, Requirements
+
+    m = ModelInfo(
+        model_id="q",
+        family="qwen2",
+        num_layers=28,
+        num_kv_heads=2,
+        head_dim=128,
+        dtype="bfloat16",
+        quantization=None,
+        max_position=32768,
+        weight_bytes=3_100_000_000,
+    )
+    g = GpuInfo(name="RTX 3060 Ti", memory_mib=8192, compute_capability="8.6")
+    c3 = next(
+        c
+        for c in make_plan(ProbeResult(model=m, gpu=g), Requirements()).candidates
+        if c.id == "c3"
+    )
+    assert "gpu_memory_utilization" not in c3.args
+    assert "--mem-fraction-static" not in A.build_args(c3).args
+    assert any("근사" in r for r in c3.reasons)

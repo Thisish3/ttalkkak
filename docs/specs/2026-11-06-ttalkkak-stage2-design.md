@@ -72,7 +72,7 @@ class EngineAdapter(Protocol):
 |---|---|---|
 | `max_model_len` | `/server_info` `context_length` | 로그 `context_len=` |
 | `kv_cache_dtype` | `/server_info` `kv_cache_dtype` | — |
-| `kv_cache_tokens` | `/server_info` `internal_states[*].max_total_num_tokens` | 로그 `max_total_num_tokens=` |
+| `kv_cache_tokens` | `/server_info` 최상위 `max_total_num_tokens`, 없으면 `internal_states[0].memory_usage.token_capacity` | 로그 `max_total_num_tokens=` |
 | `tool_call_parser`, `reasoning_parser` | `/server_info` | — |
 | `attention_backend` | `/server_info` `attention_backend` | — |
 
@@ -123,7 +123,7 @@ mistral:
 
 ### 4.7 SGLang 후보의 KV 선택
 
-c3는 1단계 메모리 계산으로 auto KV가 `min_context`를 담으면 `auto`, 아니면 `fp8`(어댑터가 `fp8_e4m3`로 변환). fp8이면 `requires_accuracy=True`로 기준선이 필요하다. 기준선은 vLLM c1 또는 c0의 점수를 쓴다(같은 모델·같은 평가 세트이므로 엔진이 달라도 비교한다). 이 가정은 리포트에 적는다.
+c3는 `--mem-fraction-static`을 지정하지 않고 SGLang 기본값에 맡긴다(작은 GPU에서 SGLang이 activation·CUDA graph 여유를 직접 잡기 때문). 그래서 c3의 KV 예측은 근사이며 리포트에 그렇게 적는다. c3는 1단계 메모리 계산으로 auto KV가 `min_context`를 담으면 `auto`, 아니면 `fp8`(어댑터가 `fp8_e4m3`로 변환). fp8이면 `requires_accuracy=True`로 기준선이 필요하다. 기준선은 vLLM c1 또는 c0의 점수를 쓴다(같은 모델·같은 평가 세트이므로 엔진이 달라도 비교한다). 이 가정은 리포트에 적는다.
 
 ## 5. 리포트 변경
 

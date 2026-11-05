@@ -1,6 +1,19 @@
-{"_note": "SYNTHETIC: field names from sglang http_server.py server_info + ServerArgs; replace from a real run (Task 8)",
- "model_path": "Qwen/Qwen2.5-1.5B-Instruct", "context_length": 16384,
- "kv_cache_dtype": "fp8_e4m3", "tool_call_parser": "qwen25", "reasoning_parser": null,
- "attention_backend": "flashinfer", "mem_fraction_static": 0.9,
+{
+ "_note": "SYNTHETIC: shape from sglang main e838360 (build_server_info merges scheduler_info: top-level max_total_num_tokens; internal_states[i].memory_usage.token_capacity); replace from a real run (Task 8)",
+ "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+ "context_length": 16384,
+ "kv_cache_dtype": "fp8_e4m3",
+ "tool_call_parser": "qwen25",
+ "reasoning_parser": null,
+ "attention_backend": "flashinfer",
+ "mem_fraction_static": 0.9,
  "launch_command": "python -m sglang.launch_server --model-path Qwen/Qwen2.5-1.5B-Instruct",
- "internal_states": [{"max_total_num_tokens": 90112}]}
+ "internal_states": [
+  {
+   "memory_usage": {
+    "token_capacity": 90112
+   }
+  }
+ ],
+ "max_total_num_tokens": 90112
+}

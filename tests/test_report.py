@@ -74,3 +74,20 @@ def test_report_shows_reasons_of_blocked_candidates():
     )
     md = render_report(plan, [], Verification(verdicts=[]), Pick(chosen=None))
     assert "file-qa의 min_context 32768 때문에 불가" in md
+
+
+def test_report_notes_cross_engine_baseline_for_sglang_fp8():
+    plan = Plan(
+        requirements=Requirements(),
+        candidates=[
+            Candidate(
+                id="c3",
+                engine="sglang",
+                model_id="m",
+                args={"kv_cache_dtype": "fp8"},
+                requires_accuracy=True,
+            )
+        ],
+    )
+    md = render_report(plan, [], Verification(verdicts=[]), Pick(chosen=None))
+    assert "vLLM" in md and "기준" in md and "엔진이 달라도" in md

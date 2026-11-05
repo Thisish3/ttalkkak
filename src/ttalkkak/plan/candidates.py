@@ -98,7 +98,9 @@ def _sglang_candidate(probe: ProbeResult, req: Requirements) -> Candidate:
     fit = max_context_fit(m, g, kv)
     length = min(m.max_position, fit)
     blockers = list(s_blockers)
-    reasons = [f"SGLang KV {kv}: 들어가는 문맥 약 {fit} 토큰"]
+    reasons = [
+        f"SGLang KV {kv}: 들어가는 문맥 약 {fit} 토큰 (근사: 메모리 비율은 SGLang 기본값)"
+    ]
     if length < need:
         blockers.append(f"max_model_len {length} < 필요 {req.min_context}")
         who = ", ".join(req.sources.get("min_context", [])) or "요청"
@@ -107,12 +109,7 @@ def _sglang_candidate(probe: ProbeResult, req: Requirements) -> Candidate:
         id="c3",
         engine="sglang",
         model_id=m.model_id,
-        args={
-            "kv_cache_dtype": kv,
-            "max_model_len": length,
-            "gpu_memory_utilization": 0.9,
-        }
-        | s_args,
+        args={"kv_cache_dtype": kv, "max_model_len": length} | s_args,
         predicted={"weight_gib": m.weight_bytes / 2**30, "kv_tokens_fit": float(fit)},
         reasons=reasons,
         blockers=blockers,
