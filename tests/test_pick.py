@@ -72,3 +72,19 @@ def test_tie_prefers_earlier_candidate():
         launched_urls={"c1": "u1", "c2": "u2"},
     )
     assert p.chosen == "c1"
+
+
+def test_tie_prefers_more_kv_tokens():
+    def with_kv(cid, kv):
+        x = v(cid, 30)
+        x.applied = AppliedConfig(
+            values={"kv_cache_tokens": AppliedValue(value=kv, evidence="log")}
+        )
+        return x
+
+    p = pick(
+        [with_kv("c1", 1000), with_kv("c2", 2000)],
+        baseline=None,
+        launched_urls={"c1": "u1", "c2": "u2"},
+    )
+    assert p.chosen == "c2"

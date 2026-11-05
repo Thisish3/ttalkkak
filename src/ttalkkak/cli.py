@@ -32,7 +32,7 @@ def up(
     deps = Deps(
         probe=probe,
         check_docker=check_docker,
-        launch=lambda c, a: launch(c, a),
+        launch=lambda c, a, p: launch(c, a, platform=p),
         stop=stop,
         client=httpx.Client(),
         run_accuracy=run_accuracy,

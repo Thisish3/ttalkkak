@@ -3,6 +3,11 @@ from ttalkkak.schemas import CandidateVerdict, Pick
 ACCURACY_DROP_MAX = 0.05
 
 
+def _kv(v: CandidateVerdict) -> float:
+    got = v.applied.values.get("kv_cache_tokens")
+    return float(got.value) if got and isinstance(got.value, int | float) else 0.0
+
+
 def pick(
     verdicts: list[CandidateVerdict],
     baseline: float | None,
@@ -26,8 +31,8 @@ def pick(
             ok.append(v)
     if not ok:
         return Pick(chosen=None, rejected=rejected)
-    # max() keeps the first of equal scores, so ties go to the earlier candidate
-    best = max(ok, key=lambda v: v.perf.get("output_tok_s", 0.0))
+    # ties: more KV room wins; max() keeps the first of fully equal keys
+    best = max(ok, key=lambda v: (v.perf.get("output_tok_s", 0.0), _kv(v)))
     return Pick(
         chosen=best.candidate_id,
         rejected=rejected,

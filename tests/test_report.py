@@ -52,7 +52,7 @@ def test_report_has_warning_table_and_failure():
     md = render_report(plan, launched, ver, Pick(chosen="c1", base_url="http://h:8000"))
     assert md.index("경고") < md.index("예측 vs 실측")
     assert "kv_cache_dtype: 요청 fp8, 실제 auto" in md
-    assert "| c1 | 8192 |" in md and "9000 / 7000" in md
+    assert "| c1 | vllm | 8192 |" in md and "9000 / 7000" in md
     assert "oom" in md and "CUDA out of memory" in md
     assert "tool_calling ← web-fetch" in md
     assert 'base_url="http://h:8000/v1"' in md

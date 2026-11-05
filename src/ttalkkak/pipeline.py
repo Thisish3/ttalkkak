@@ -7,10 +7,11 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from ttalkkak.engines.vllm import VllmAdapter
+from ttalkkak.engines import ADAPTERS
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.pick import pick
 from ttalkkak.plan.candidates import make_plan
+from ttalkkak.platform import Platform
 from ttalkkak.report import render_report
 from ttalkkak.schemas import (
     Candidate,
@@ -80,7 +81,7 @@ def run_up(
         _save(run_dir, "state.json", state)
 
     def start(c: Candidate) -> Launched:
-        item = deps.launch(c, adapter)
+        item = deps.launch(c, ADAPTERS[c.engine], platform)
         launched.append(item)
         if item.status == "ready" and item.container:
             running.append(item.container)
@@ -109,7 +110,7 @@ def run_up(
             _save(run_dir, "plan.json", plan)
             mark("plan")
         runnable = [c for c in plan.candidates if not c.blockers]
-        adapter = VllmAdapter()
+        platform = Platform.from_gpu(pr.gpu)
         verdicts: list[CandidateVerdict] = []
         errors: dict[str, str] = {}
         baseline = None
@@ -122,11 +123,11 @@ def run_up(
             try:
                 url = f"{item.base_url}/v1"
                 acc = deps.run_accuracy(url, c.model_id, run_dir / f"acc_{c.id}")
-                if c.args.get("kv_cache_dtype") == "auto":
+                if c.engine == "vllm" and c.args.get("kv_cache_dtype") == "auto":
                     baseline = acc
                 if c.baseline_only:
                     continue
-                applied = adapter.read_applied(item.logs, item.collected)
+                applied = ADAPTERS[c.engine].read_applied(item.logs, item.collected)
                 v = CandidateVerdict(
                     candidate_id=c.id,
                     applied=applied,

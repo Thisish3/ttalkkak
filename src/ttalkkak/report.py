@@ -24,8 +24,11 @@ def render_report(
     lines += [
         "## 예측 vs 실측",
         "",
-        "| 후보 | max_model_len | KV 토큰 예측 / 실측 | 출력 tok/s | TTFT ms | 정확도 |",
-        "|---|---|---|---|---|---|",
+        (
+            "| 후보 | 엔진 | max_model_len | KV 토큰 예측 / 실측 | 출력 tok/s "
+            "| TTFT ms | 정확도 |"
+        ),
+        "|---|---|---|---|---|---|---|",
     ]
     for c in plan.candidates:
         v = by_v.get(c.id)
@@ -33,6 +36,7 @@ def render_report(
         pred_kv = c.predicted.get("kv_tokens_fit")
         cells = [
             c.id,
+            c.engine,
             str(c.args.get("max_model_len", "-")),
             (
                 f"{_fmt(int(pred_kv) if pred_kv is not None else None)} / "

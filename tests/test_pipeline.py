@@ -24,7 +24,7 @@ SKILLS = Path(__file__).parent / "fixtures/skills"
 
 
 def deps(stopped, launch_status="ready", interrupt=False):
-    def launch(c, adapter, **kw):
+    def launch(c, adapter, platform=None, **kw):
         if interrupt:
             raise KeyboardInterrupt
         return Launched(
@@ -89,7 +89,7 @@ class Gpu:
     def __init__(self):
         self.active, self.peak, self.stopped = set(), 0, []
 
-    def launch(self, c, adapter, **kw):
+    def launch(self, c, adapter, platform=None, **kw):
         cid = f"k{c.id}-{len(self.stopped) + len(self.active)}"
         self.active.add(cid)
         self.peak = max(self.peak, len(self.active))
@@ -199,3 +199,70 @@ def test_resolve_endpoint_missing_run_is_clear_error(tmp_path):
 
     with pytest.raises(TtalkkakError, match="run"):
         resolve_endpoint(tmp_path / "nope")
+
+
+def test_sglang_candidate_runs_after_vllm_and_can_win(tmp_path):
+    gpu = Gpu()
+    seen = []
+    orig = gpu.launch
+
+    def launch(c, adapter, platform=None, **kw):
+        seen.append((c.id, adapter.name))
+        return orig(c, adapter, platform)
+
+    def perf(url, model, out):
+        return {"output_tok_s": 30.0 if "/c3/" in url else 10.0}
+
+    d = gpu_deps(gpu, run_perf=perf)
+    d.launch = launch
+    _, p = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d)
+    assert seen[:3] == [("c1", "vllm"), ("c2", "vllm"), ("c3", "sglang")]
+    assert seen[3] == ("c3", "sglang")  # winner relaunched
+    assert p.chosen == "c3" and gpu.peak == 1
+
+
+def test_amd_probe_passes_amd_platform(tmp_path):
+    gpu = Gpu()
+    vendors = []
+    orig = gpu.launch
+
+    def launch(c, adapter, platform=None, **kw):
+        vendors.append(platform.vendor)
+        return orig(c, adapter, platform)
+
+    amd = G.model_copy(update={"vendor": "amd", "arch": "gfx942"})
+    d = gpu_deps(gpu, probe=lambda m: ProbeResult(model=M, gpu=amd))
+    d.launch = launch
+    run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d)
+    assert vendors and set(vendors) == {"amd"}
+
+
+def test_sglang_fp8_without_baseline_is_rejected(tmp_path, monkeypatch):
+    from ttalkkak import pipeline
+    from ttalkkak.schemas import Candidate, Plan, Requirements
+
+    plan = Plan(
+        requirements=Requirements(),
+        candidates=[
+            Candidate(
+                id="c3",
+                engine="sglang",
+                model_id=M.model_id,
+                args={"kv_cache_dtype": "fp8"},
+                requires_accuracy=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(pipeline, "make_plan", lambda pr, req: plan)
+    _, p = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()))
+    assert p.chosen is None and p.rejected["c3"] == "기준 정확도 없음"
+
+
+def test_sglang_auto_score_does_not_replace_vllm_baseline(tmp_path):
+    def acc(url, model, out):
+        return 0.9 if "/c3/" in url else 0.6
+
+    _, p = run_up(
+        M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu(), run_accuracy=acc)
+    )
+    assert "c2" not in p.rejected  # c2 (vLLM fp8) judged against vLLM c1 = 0.6
