@@ -21,8 +21,11 @@ def req(**kw):
 
 def test_two_candidates_auto_and_fp8():
     p = make_plan(ProbeResult(model=M, gpu=G), req())
-    assert [c.args["kv_cache_dtype"] for c in p.candidates] == ["auto", "fp8"]
-    assert p.candidates[1].requires_accuracy
+    assert [c.args["kv_cache_dtype"] for c in p.candidates if c.engine == "vllm"] == [
+        "auto",
+        "fp8",
+    ]
+    assert [c for c in p.candidates if c.engine == "vllm"][1].requires_accuracy
 
 
 def test_tool_calling_sets_parser():
@@ -90,3 +93,33 @@ def test_parser_table_is_per_engine():
     assert parsers_for("qwen2", "vllm").tool == "hermes"
     assert parsers_for("qwen2", "sglang").tool == "qwen25"
     assert parsers_for("qwen2", "trtllm") is None
+
+
+def test_c3_is_sglang_with_auto_kv_when_it_fits():
+    p = make_plan(ProbeResult(model=M, gpu=G), req(min_context=4096))
+    c3 = next(c for c in p.candidates if c.id == "c3")
+    assert c3.engine == "sglang" and c3.args["kv_cache_dtype"] == "auto"
+    assert not c3.requires_accuracy and not c3.blockers
+
+
+def test_c3_uses_fp8_when_auto_cannot_hold_context():
+    from ttalkkak.plan.memory import max_context_fit
+
+    need = max_context_fit(M, G, "auto") + 1
+    p = make_plan(ProbeResult(model=M, gpu=G), req(min_context=need))
+    c3 = next(c for c in p.candidates if c.id == "c3")
+    assert c3.args["kv_cache_dtype"] == "fp8" and c3.requires_accuracy
+
+
+def test_missing_sglang_parser_blocks_only_c3(monkeypatch):
+    from ttalkkak.plan import candidates
+    from ttalkkak.plan.parsers import ParserEntry
+
+    def fake(family, engine):
+        return ParserEntry(tool="hermes", reasoning=None) if engine == "vllm" else None
+
+    monkeypatch.setattr(candidates, "parsers_for", fake)
+    p = make_plan(ProbeResult(model=M, gpu=G), req(flags={"tool_calling": True}))
+    by = {c.id: c for c in p.candidates}
+    assert not by["c1"].blockers and any("sglang" in b for b in by["c3"].blockers)
+    assert "enable_auto_tool_choice" not in by["c3"].args

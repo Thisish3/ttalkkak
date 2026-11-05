@@ -34,9 +34,7 @@ def _parser_args(family: str, req: Requirements, engine: str) -> tuple[dict, lis
 def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
     m, g = probe.model, probe.gpu
     if m is None or g is None:
-        raise TtalkkakError(
-            "로컬 서빙 계획에는 HF 모델 정보와 NVIDIA GPU가 필요합니다", 2
-        )
+        raise TtalkkakError("로컬 서빙 계획에는 HF 모델 정보와 GPU가 필요합니다", 2)
     parser_args, parser_blockers = _parser_args(m.family, req, "vllm")
     out = []
     for i, kv in enumerate(["auto", "fp8"], start=1):
@@ -72,6 +70,7 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
                 requires_accuracy=(kv == "fp8"),
             )
         )
+    out.append(_sglang_candidate(probe, req))
     c1 = out[0]
     fp8_runnable = any(not c.blockers for c in out[1:])
     if c1.blockers and fp8_runnable and c1.args["max_model_len"] >= BASELINE_LEN:
@@ -88,3 +87,34 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
             ),
         )
     return Plan(candidates=out, requirements=req)
+
+
+def _sglang_candidate(probe: ProbeResult, req: Requirements) -> Candidate:
+    m, g = probe.model, probe.gpu
+    need = max(req.min_context, 1)
+    s_args, s_blockers = _parser_args(m.family, req, "sglang")
+    auto_len = min(m.max_position, max_context_fit(m, g, "auto"))
+    kv = "auto" if auto_len >= need else "fp8"
+    fit = max_context_fit(m, g, kv)
+    length = min(m.max_position, fit)
+    blockers = list(s_blockers)
+    reasons = [f"SGLang KV {kv}: 들어가는 문맥 약 {fit} 토큰"]
+    if length < need:
+        blockers.append(f"max_model_len {length} < 필요 {req.min_context}")
+        who = ", ".join(req.sources.get("min_context", [])) or "요청"
+        reasons.append(f"{who}의 min_context {req.min_context} 때문에 불가")
+    return Candidate(
+        id="c3",
+        engine="sglang",
+        model_id=m.model_id,
+        args={
+            "kv_cache_dtype": kv,
+            "max_model_len": length,
+            "gpu_memory_utilization": 0.9,
+        }
+        | s_args,
+        predicted={"weight_gib": m.weight_bytes / 2**30, "kv_tokens_fit": float(fit)},
+        reasons=reasons,
+        blockers=blockers,
+        requires_accuracy=(kv == "fp8"),
+    )

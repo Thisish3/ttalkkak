@@ -62,7 +62,7 @@ def test_up_writes_all_stage_files_and_keeps_chosen(tmp_path):
         "state.json",
     ]:
         assert (run_dir / f).exists(), f
-    assert p.chosen == "c2" and stopped == ["kc1", "kc2"]
+    assert p.chosen == "c2" and stopped == ["kc1", "kc2", "kc3"]
 
 
 def test_interrupt_cleans_up_and_saves_state(tmp_path):
