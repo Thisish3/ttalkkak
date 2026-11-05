@@ -41,7 +41,6 @@ def _find(pattern: re.Pattern, text: str) -> tuple[str, str] | None:
 
 class VllmAdapter:
     name = "vllm"
-    IMAGE = "vllm/vllm-openai:v0.33.0"
     container_port = 8000
 
     def build_args(self, c: Candidate) -> ContainerSpec:
@@ -52,7 +51,7 @@ class VllmAdapter:
                 args.append(flag)
             elif val is not False:
                 args += [flag, str(val)]
-        return ContainerSpec(image=self.IMAGE, args=args)
+        return ContainerSpec(image="", args=args)
 
     def collect(self, base_url: str, client: httpx.Client) -> dict:
         out: dict = {}

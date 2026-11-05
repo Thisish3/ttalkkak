@@ -204,3 +204,22 @@ def test_numbers_alone_are_not_download_failures(log):
 def test_http_401_client_error_is_download():
     log = "requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url"
     assert classify_failure(log, timed_out=False) == "download"
+
+
+def test_amd_platform_uses_rocm_image_and_devices():
+    from ttalkkak.platform import Platform
+
+    fake = FakeDocker()
+    launch(
+        C,
+        VllmAdapter(),
+        platform=Platform(vendor="amd"),
+        run=fake,
+        client=_client(200),
+        wait_s=5,
+        sleep=lambda s: None,
+    )
+    run_cmd = next(c for c in fake.calls if c[:2] == ["docker", "run"])
+    assert "--gpus" not in run_cmd and "--device=/dev/kfd" in run_cmd
+    assert "vllm/vllm-openai-rocm:v0.33.0" in run_cmd
+    assert fake.calls[0] == ["docker", "pull", "vllm/vllm-openai-rocm:v0.33.0"]

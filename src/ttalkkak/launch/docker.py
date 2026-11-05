@@ -6,6 +6,7 @@ import httpx
 
 from ttalkkak.engines.base import EngineAdapter
 from ttalkkak.errors import TtalkkakError
+from ttalkkak.platform import Platform
 from ttalkkak.schemas import Candidate, FailureKind, Launched
 
 _PATTERNS: list[tuple[FailureKind, tuple[str, ...]]] = [
@@ -25,6 +26,7 @@ _PATTERNS: list[tuple[FailureKind, tuple[str, ...]]] = [
     ),
 ]
 PULL_TIMEOUT_S = 3600
+NVIDIA = Platform(vendor="nvidia")
 
 
 def check_docker(run=subprocess.run) -> None:
@@ -89,6 +91,7 @@ def _failed(
 def launch(
     c: Candidate,
     adapter: EngineAdapter,
+    platform: Platform = NVIDIA,
     run=subprocess.run,
     client: httpx.Client | None = None,
     wait_s: int = 900,
@@ -96,15 +99,23 @@ def launch(
 ) -> Launched:
     client = client or httpx.Client()
     spec = adapter.build_args(c)
+    image = platform.image(adapter.name)
+    if image is None:
+        return _failed(
+            c,
+            f"no image for {adapter.name} on {platform.vendor}",
+            False,
+            kind="bad_arg",
+        )
     try:
         pulled = run(
-            ["docker", "pull", spec.image],
+            ["docker", "pull", image],
             capture_output=True,
             text=True,
             timeout=PULL_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        return _failed(c, f"docker pull {spec.image} timed out", True, kind="download")
+        return _failed(c, f"docker pull {image} timed out", True, kind="download")
     if pulled.returncode != 0:
         return _failed(c, pulled.stderr or "", False, kind="download")
     port = free_port()
@@ -112,17 +123,16 @@ def launch(
         "docker",
         "run",
         "-d",
-        "--gpus",
-        "all",
+        *platform.gpu_flags(),
         "--ipc=host",
         "-p",
-        f"{port}:{spec.container_port}",
+        f"{port}:{adapter.container_port}",
         "-v",
         "ttalkkak-hf-cache:/root/.cache/huggingface",
         "-e",
         "HF_TOKEN",
         *[f"-e{k}={v}" for k, v in spec.env.items()],
-        spec.image,
+        image,
         *spec.args,
     ]
     started = run(cmd, capture_output=True, text=True, timeout=120)

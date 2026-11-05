@@ -23,7 +23,6 @@ def test_build_args_maps_flags():
         },
     )
     spec = A.build_args(c)
-    assert spec.image == "vllm/vllm-openai:v0.33.0"
     assert spec.args[:2] == ["--model", "m/x"]
     assert "--enable-auto-tool-choice" in spec.args
     i = spec.args.index("--tool-call-parser")
