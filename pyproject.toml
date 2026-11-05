@@ -2,6 +2,8 @@
 name = "ttalkkak"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
   "pydantic==2.14.3", "httpx==0.28.1", "typer==0.27.3", "huggingface-hub==2.4.0",
   "pyyaml", "langchain==1.4.9", "langgraph==1.2.20", "langchain-openai", "fastmcp==4.1.6",
