@@ -48,7 +48,10 @@ class _LaunchList(BaseModel):
 
 
 def _save(run_dir: Path, name: str, obj: BaseModel) -> None:
-    (run_dir / name).write_text(obj.model_dump_json(indent=2), encoding="utf-8")
+    # atomic, so the UI never reads a half-written file
+    tmp = run_dir / f".{name}.tmp"
+    tmp.write_text(obj.model_dump_json(indent=2), encoding="utf-8")
+    os.replace(tmp, run_dir / name)
 
 
 def _load(run_dir: Path, name: str, cls):

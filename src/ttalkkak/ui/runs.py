@@ -1,3 +1,4 @@
+import ctypes
 import json
 import re
 import threading
@@ -21,6 +22,7 @@ class RunManager:
         self._lock = threading.Lock()
         self._running: str | None = None
         self._errors: dict[str, dict] = {}
+        self._thread: threading.Thread | None = None
 
     def safe_dir(self, run_id: str) -> Path:
         if not _RUN_ID.match(run_id or "") or run_id in (".", ".."):
@@ -35,16 +37,30 @@ class RunManager:
             while (self.runs_root / run_id).exists():
                 run_id += "x"
             self._running = run_id
-        threading.Thread(
-            target=self._work, args=(model, skills, run_id), daemon=True
-        ).start()
+            # not a daemon: shutdown() interrupts it so the pipeline stops containers
+            self._thread = threading.Thread(
+                target=self._work, args=(model, skills, run_id)
+            )
+            self._thread.start()
         return run_id
+
+    def shutdown(self, timeout: float = 120) -> None:
+        """Interrupt a running pipeline (KeyboardInterrupt) and wait for cleanup."""
+        th = self._thread
+        if th is None or not th.is_alive():
+            return
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_ulong(th.ident), ctypes.py_object(KeyboardInterrupt)
+        )
+        th.join(timeout)
 
     def _work(self, model: str, skills: list[str], run_id: str) -> None:
         try:
             self.run_fn(model, skills, run_id)
         except TtalkkakError as err:
             self._errors[run_id] = {"message": str(err), "exit_code": err.exit_code}
+        except KeyboardInterrupt:
+            self._errors[run_id] = {"message": "중단됨 (서버 종료)", "exit_code": 130}
         except Exception as err:  # noqa: BLE001 - the UI must keep serving
             self._errors[run_id] = {
                 "message": f"{type(err).__name__}: {err}",
@@ -62,7 +78,10 @@ class RunManager:
 
         def load(name):
             p = d / name
-            return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
 
         state = load("state.json") or {}
         report = d / "report.md"

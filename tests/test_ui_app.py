@@ -36,7 +36,7 @@ def make(tmp_path, list_models=None, run_fn=None):
     deps = UiDeps(
         list_models=list_models or models, detect_gpu=lambda: GPU8, run_fn=run_fn or run
     )
-    return TestClient(create_app(tmp_path, deps))
+    return TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
 
 
 def test_index_page(tmp_path):
@@ -100,3 +100,79 @@ def test_export(tmp_path):
     assert (tmp_path / "runs" / "r1" / "export-k8s" / "deployment.yaml").exists()
     r = c.post("/api/runs/r1/export", json={"target": "dynamo"})
     assert r.status_code == 400 and "--image" in r.json()["error"]
+
+
+def test_foreign_host_header_is_rejected(tmp_path):
+    c = make(tmp_path)
+    assert c.get("/api/gpu", headers={"host": "evil.example.com"}).status_code == 403
+
+
+def test_post_needs_json_content_type_and_same_origin(tmp_path):
+    c = make(tmp_path)
+    r = c.post(
+        "/api/runs",
+        content='{"model":"m","skills":[]}',
+        headers={"content-type": "text/plain"},
+    )
+    assert r.status_code == 415
+    r = c.post(
+        "/api/runs",
+        json={"model": "m", "skills": []},
+        headers={"origin": "https://evil.example.com"},
+    )
+    assert r.status_code == 403
+    r = c.post(
+        "/api/runs",
+        json={"model": "m", "skills": []},
+        headers={"origin": "http://testserver"},
+    )
+    assert r.status_code == 200
+
+
+def test_bad_inputs_are_400(tmp_path):
+    c = make(tmp_path)
+    assert c.get("/api/models", params={"q": "x", "limit": "abc"}).status_code == 400
+    assert (
+        c.post(
+            "/api/runs",
+            content="not json",
+            headers={"content-type": "application/json"},
+        ).status_code
+        == 400
+    )
+    assert c.post("/api/runs", json=["a"]).status_code == 400
+    assert (
+        c.post(
+            "/api/runs/r1/export",
+            content="nope",
+            headers={"content-type": "application/json"},
+        ).status_code
+        == 400
+    )
+
+
+def test_limit_is_clamped(tmp_path):
+    seen = {}
+
+    def models(**kw):
+        seen["limit"] = kw["limit"]
+        return iter([])
+
+    make(tmp_path, list_models=models).get(
+        "/api/models", params={"q": "x", "limit": "-5"}
+    )
+    assert seen["limit"] == 1
+
+
+def test_handlers_do_not_block_the_event_loop(tmp_path):
+    from ttalkkak.ui import app as appmod
+
+    make(tmp_path)
+
+    import inspect
+
+    for name in ("gpu", "models", "skills", "status", "list_runs"):
+        assert name in appmod.SYNC_HANDLERS
+    assert all(
+        not inspect.iscoroutinefunction(f) for f in appmod.SYNC_HANDLERS.values()
+    )

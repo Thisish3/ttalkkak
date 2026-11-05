@@ -1,9 +1,12 @@
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
@@ -13,6 +16,8 @@ from ttalkkak.export import write_export
 from ttalkkak.skills.loader import load_skill
 from ttalkkak.ui.models import search_models
 from ttalkkak.ui.runs import Busy, RunManager
+
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
 
 @dataclass
@@ -26,29 +31,73 @@ def _err(msg: str, status: int) -> JSONResponse:
     return JSONResponse({"error": msg}, status_code=status)
 
 
-def create_app(root: Path, deps: UiDeps) -> Starlette:
+class _BadRequest(Exception):
+    pass
+
+
+async def _body(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError as err:
+        raise _BadRequest("body must be JSON") from err
+    if not isinstance(body, dict):
+        raise _BadRequest("body must be a JSON object")
+    return body
+
+
+class _LocalOnly:
+    """Reject foreign Host headers (DNS rebinding) and cross-site or non-JSON POSTs."""
+
+    def __init__(self, app, allowed: frozenset[str]):
+        self.app, self.allowed = app, allowed
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        req = Request(scope)
+        host = (req.headers.get("host") or "").rsplit(":", 1)[0].strip("[]")
+        resp = None
+        if host not in self.allowed:
+            resp = _err("forbidden host", 403)
+        elif req.method == "POST":
+            origin = req.headers.get("origin")
+            if origin and urlsplit(origin).hostname not in self.allowed:
+                resp = _err("cross-origin request refused", 403)
+            elif not req.headers.get("content-type", "").startswith("application/json"):
+                resp = _err("content-type must be application/json", 415)
+        if resp is not None:
+            return await resp(scope, receive, send)
+        return await self.app(scope, receive, send)
+
+
+def create_app(
+    root: Path, deps: UiDeps, allowed_hosts: frozenset[str] = LOCAL_HOSTS
+) -> Starlette:
     runs = RunManager(root / "runs", deps.run_fn)
     page = (
         files("ttalkkak.ui").joinpath("static/index.html").read_text(encoding="utf-8")
     )
 
-    async def index(request: Request):
+    def index(request: Request):
         return HTMLResponse(page)
 
-    async def gpu(request: Request):
+    def gpu(request: Request):
         g = deps.detect_gpu()
         return JSONResponse(g.model_dump() if g else None)
 
-    async def models(request: Request):
+    def models(request: Request):
         q = request.query_params.get("q", "").strip()
-        limit = min(int(request.query_params.get("limit", 20)), 50)
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 20)), 50))
+        except ValueError:
+            return _err("limit must be an integer", 400)
         try:
             rows = search_models(q, limit, deps.detect_gpu(), deps.list_models)
         except Exception as err:  # noqa: BLE001 - surface HF errors to the page
             return _err(f"HF 검색 실패: {err}", 502)
         return JSONResponse(rows)
 
-    async def skills(request: Request):
+    def skills(request: Request):
         out = []
         sdir = root / "skills"
         for d in (
@@ -68,8 +117,20 @@ def create_app(root: Path, deps: UiDeps) -> Starlette:
             )
         return JSONResponse(out)
 
+    def list_runs(request: Request):
+        return JSONResponse(runs.list())
+
+    def status(request: Request):
+        try:
+            return JSONResponse(runs.status(request.path_params["run_id"]))
+        except KeyError:
+            return _err("run not found", 404)
+
     async def start(request: Request):
-        body = await request.json()
+        try:
+            body = await _body(request)
+        except _BadRequest as err:
+            return _err(str(err), 400)
         model = str(body.get("model") or "").strip()
         if not model:
             return _err("model is required", 400)
@@ -79,41 +140,30 @@ def create_app(root: Path, deps: UiDeps) -> Starlette:
             return _err(f"이미 실행 중입니다: {busy}", 409)
         return JSONResponse({"run_id": run_id})
 
-    async def list_runs(request: Request):
-        return JSONResponse(runs.list())
-
-    async def status(request: Request):
-        try:
-            return JSONResponse(runs.status(request.path_params["run_id"]))
-        except KeyError:
-            return _err("run not found", 404)
-
     async def export(request: Request):
-        run_id = request.path_params["run_id"]
         try:
-            run_dir = runs.safe_dir(run_id)
+            body = await _body(request)
+            run_dir = runs.safe_dir(request.path_params["run_id"])
+        except _BadRequest as err:
+            return _err(str(err), 400)
         except KeyError:
             return _err("run not found", 404)
-        body = await request.json()
         target = str(body.get("target") or "")
+        out = run_dir / f"export-{target}"
         try:
-            written = write_export(
-                run_dir,
-                target,
-                run_dir / f"export-{target}",
-                force=True,
-                image=body.get("image") or None,
+            written = await run_in_threadpool(
+                write_export, run_dir, target, out, True, body.get("image") or None
             )
         except TtalkkakError as err:
             return _err(str(err), 400)
-        return JSONResponse(
-            {
-                "files": [p.name for p in written],
-                "dir": str(run_dir / f"export-{target}"),
-            }
-        )
+        return JSONResponse({"files": [p.name for p in written], "dir": str(out)})
 
-    return Starlette(routes=[
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        yield
+        await run_in_threadpool(runs.shutdown)
+
+    app = Starlette(routes=[
         Route("/", index),
         Route("/api/gpu", gpu),
         Route("/api/models", models),
@@ -122,4 +172,14 @@ def create_app(root: Path, deps: UiDeps) -> Starlette:
         Route("/api/runs", list_runs, methods=["GET"]),
         Route("/api/runs/{run_id}", status),
         Route("/api/runs/{run_id}/export", export, methods=["POST"]),
-    ])  # fmt: skip
+    ], lifespan=lifespan)  # fmt: skip
+    app.add_middleware(_LocalOnly, allowed=allowed_hosts)
+    SYNC_HANDLERS.update(
+        gpu=gpu, models=models, skills=skills, status=status, list_runs=list_runs
+    )
+    return app
+
+
+# sync handlers run in Starlette's threadpool, so HF and subprocess calls
+# never block the event loop (filled by create_app; inspected by tests)
+SYNC_HANDLERS: dict[str, Callable] = {}

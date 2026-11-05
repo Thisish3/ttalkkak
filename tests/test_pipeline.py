@@ -273,3 +273,17 @@ def test_run_up_accepts_a_given_run_id(tmp_path):
         M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()), run_id="ui-run-1"
     )
     assert run_dir.name == "ui-run-1" and (run_dir / "pick.json").exists()
+
+
+def test_stage_files_are_written_atomically(tmp_path, monkeypatch):
+    import os
+
+    from ttalkkak import pipeline
+
+    replaced = []
+    real = os.replace
+    monkeypatch.setattr(
+        pipeline.os, "replace", lambda a, b: (replaced.append(b), real(a, b))
+    )
+    run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()))
+    assert any(str(p).endswith("state.json") for p in replaced)

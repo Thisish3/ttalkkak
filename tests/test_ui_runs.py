@@ -79,3 +79,39 @@ def test_safe_dir_rejects_traversal(tmp_path, bad):
 def test_status_of_unknown_run(tmp_path):
     with pytest.raises(KeyError):
         RunManager(tmp_path, None).status("nope")
+
+
+def test_corrupt_json_does_not_break_status_or_list(tmp_path):
+    d = tmp_path / "20260101-000000"
+    d.mkdir()
+    (d / "state.json").write_text('{"run_id": "x", "do')
+    (d / "pick.json").write_text("")
+    mgr = RunManager(tmp_path, None)
+    st = mgr.status(d.name)
+    assert st["done"] == [] and st["pick"] is None
+    assert mgr.list()[0]["run_id"] == d.name
+
+
+def test_shutdown_interrupts_run_so_cleanup_runs(tmp_path):
+    cleaned = threading.Event()
+
+    def run(model, skills, run_id):
+        try:
+            while True:
+                time.sleep(0.01)
+        finally:
+            cleaned.set()
+
+    mgr = RunManager(tmp_path, run)
+    mgr.start("m", [])
+    time.sleep(0.05)
+    mgr.shutdown(timeout=5)
+    assert cleaned.is_set()
+
+
+def test_worker_thread_is_not_daemon(tmp_path):
+    gate = threading.Event()
+    mgr = RunManager(tmp_path, lambda m, s, r: gate.wait(5))
+    mgr.start("m", [])
+    assert mgr._thread is not None and not mgr._thread.daemon
+    gate.set()
