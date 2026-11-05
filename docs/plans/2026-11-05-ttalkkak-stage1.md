@@ -1848,8 +1848,8 @@ def pick(verdicts: list[CandidateVerdict], baseline: float | None,
             ok.append(v)
     if not ok:
         return Pick(chosen=None, rejected=rejected)
-    # 동률이면 앞선 후보(c1, 메모리 여유가 큼)
-    best = max(reversed(ok), key=lambda v: v.perf.get("output_tok_s", 0.0))
+    # max()는 동률이면 먼저 나온 것을 고른다 → 앞선 후보(c1, 메모리 여유가 큼)
+    best = max(ok, key=lambda v: v.perf.get("output_tok_s", 0.0))
     return Pick(chosen=best.candidate_id, rejected=rejected,
                 base_url=launched_urls.get(best.candidate_id))
 ```
