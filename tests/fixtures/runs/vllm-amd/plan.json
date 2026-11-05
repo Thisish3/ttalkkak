@@ -1,0 +1,17 @@
+{
+ "candidates": [
+  {
+   "id": "c1",
+   "engine": "vllm",
+   "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+   "args": {
+    "kv_cache_dtype": "auto",
+    "max_model_len": 16384,
+    "gpu_memory_utilization": 0.9,
+    "tool_call_parser": "hermes",
+    "enable_auto_tool_choice": true
+   }
+  }
+ ],
+ "requirements": {}
+}

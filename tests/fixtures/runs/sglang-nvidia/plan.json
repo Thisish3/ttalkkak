@@ -1,0 +1,15 @@
+{
+ "candidates": [
+  {
+   "id": "c3",
+   "engine": "sglang",
+   "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+   "args": {
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 16384,
+    "tool_call_parser": "qwen25"
+   }
+  }
+ ],
+ "requirements": {}
+}

@@ -1,0 +1,5 @@
+{
+ "chosen": "c3",
+ "base_url": "http://127.0.0.1:8000",
+ "model": "Qwen/Qwen2.5-1.5B-Instruct"
+}
