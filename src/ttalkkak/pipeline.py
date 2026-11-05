@@ -13,6 +13,7 @@ from ttalkkak.pick import pick
 from ttalkkak.plan.candidates import make_plan
 from ttalkkak.report import render_report
 from ttalkkak.schemas import (
+    Candidate,
     CandidateVerdict,
     Launched,
     Pick,
@@ -60,7 +61,6 @@ def run_up(
     skills_root: Path,
     deps: Deps,
     resume: str | None = None,
-    keep_all: bool = False,
 ) -> tuple[Path, Pick]:
     run_dir = runs_root / (resume or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -72,11 +72,24 @@ def run_up(
     req = merge_requirements(load_skills(skills_root, skills))
     remote = model.startswith("nim:")
     launched: list[Launched] = []
+    running: list[str] = []
 
     def mark(stage: str) -> None:
         if stage not in state.done:
             state.done.append(stage)
         _save(run_dir, "state.json", state)
+
+    def start(c: Candidate) -> Launched:
+        item = deps.launch(c, adapter)
+        launched.append(item)
+        if item.status == "ready" and item.container:
+            running.append(item.container)
+        return item
+
+    def halt(item: Launched) -> None:
+        if item.container in running:
+            running.remove(item.container)
+            deps.stop(item.container)
 
     try:
         if not remote and "probe" not in state.done:
@@ -97,28 +110,39 @@ def run_up(
             mark("plan")
         runnable = [c for c in plan.candidates if not c.blockers]
         adapter = VllmAdapter()
+        verdicts: list[CandidateVerdict] = []
+        errors: dict[str, str] = {}
+        baseline = None
+        # One candidate on the GPU at a time: launch, verify, stop.
         for c in runnable:
-            launched.append(deps.launch(c, adapter))
-        _save(run_dir, "launch.json", _LaunchList(items=launched))
-        mark("launch")
-        verdicts, baseline = [], None
-        for c in runnable:
-            item = next(x for x in launched if x.candidate_id == c.id)
+            item = start(c)
+            _save(run_dir, "launch.json", _LaunchList(items=launched))
             if item.status != "ready":
                 continue
-            url = f"{item.base_url}/v1"
-            applied = adapter.read_applied(item.logs, item.metrics, item.models_json)
-            v = CandidateVerdict(
-                candidate_id=c.id,
-                applied=applied,
-                mismatches=compare_applied(c, applied),
-            )
-            v.agent = run_agent_checks(deps.client, url, c.model_id, req)
-            v.accuracy = deps.run_accuracy(url, c.model_id, run_dir / f"acc_{c.id}")
-            if c.args.get("kv_cache_dtype") == "auto":
-                baseline = v.accuracy
-            v.perf = deps.run_perf(url, c.model_id, run_dir / f"perf_{c.id}.json")
-            verdicts.append(v)
+            try:
+                url = f"{item.base_url}/v1"
+                acc = deps.run_accuracy(url, c.model_id, run_dir / f"acc_{c.id}")
+                if c.args.get("kv_cache_dtype") == "auto":
+                    baseline = acc
+                if c.baseline_only:
+                    continue
+                applied = adapter.read_applied(
+                    item.logs, item.metrics, item.models_json
+                )
+                v = CandidateVerdict(
+                    candidate_id=c.id,
+                    applied=applied,
+                    mismatches=compare_applied(c, applied),
+                    accuracy=acc,
+                )
+                v.agent = run_agent_checks(deps.client, url, c.model_id, req)
+                v.perf = deps.run_perf(url, c.model_id, run_dir / f"perf_{c.id}.json")
+                verdicts.append(v)
+            except Exception as err:  # noqa: BLE001
+                errors[c.id] = f"검증 오류: {type(err).__name__}: {err}"[:300]
+            finally:
+                halt(item)
+        mark("launch")
         ver = Verification(verdicts=verdicts, baseline_accuracy=baseline)
         _save(run_dir, "verify.json", ver)
         mark("verify")
@@ -132,24 +156,25 @@ def run_up(
                 [v for v in verdicts if v.candidate_id not in needs_base], None, urls
             )
             chosen.rejected = rejected | chosen.rejected
+        chosen.rejected = errors | chosen.rejected
+        if chosen.chosen:
+            winner = next(c for c in runnable if c.id == chosen.chosen)
+            item = start(winner)
+            if item.status == "ready":
+                chosen.base_url, chosen.model = item.base_url, winner.model_id
+            else:
+                chosen.rejected[winner.id] = f"재기동 실패 ({item.failure})"
+                chosen.chosen, chosen.base_url = None, None
+        _save(run_dir, "launch.json", _LaunchList(items=launched))
         _save(run_dir, "pick.json", chosen)
         mark("pick")
         (run_dir / "report.md").write_text(
             render_report(plan, launched, ver, chosen), encoding="utf-8"
         )
-        for x in launched:
-            if (
-                x.container
-                and x.status == "ready"
-                and x.candidate_id != chosen.chosen
-                and not keep_all
-            ):
-                deps.stop(x.container)
         return run_dir, chosen
     except BaseException:
-        for x in launched:
-            if x.container:
-                deps.stop(x.container)
+        for cid in running[:]:
+            deps.stop(cid)
         _save(run_dir, "state.json", state)
         raise
 
@@ -164,5 +189,21 @@ def _run_remote(run_dir: Path, model: str, req: Requirements, deps: Deps):
     ver = Verification(verdicts=[v])
     _save(run_dir, "verify.json", ver)
     chosen = pick([v], None, {"nim": NIM_URL.removesuffix("/v1")})
+    chosen.model = name
     _save(run_dir, "pick.json", chosen)
+    plan = Plan(candidates=[], requirements=req)
+    (run_dir / "report.md").write_text(
+        render_report(plan, [], ver, chosen), encoding="utf-8"
+    )
     return run_dir, chosen
+
+
+def resolve_endpoint(run_dir: Path) -> tuple[str, str, str]:
+    """Return (OpenAI base URL, model, API key) of a finished run's endpoint."""
+    if not (run_dir / "pick.json").is_file():
+        raise TtalkkakError(f"완료된 run이 아닙니다: {run_dir}", 2)
+    chosen = _load(run_dir, "pick.json", Pick)
+    if not chosen.base_url or not chosen.model:
+        raise TtalkkakError("선택된 엔드포인트가 없습니다", 1)
+    key = os.environ.get("NVIDIA_API_KEY", "") if chosen.chosen == "nim" else "EMPTY"
+    return f"{chosen.base_url}/v1", chosen.model, key

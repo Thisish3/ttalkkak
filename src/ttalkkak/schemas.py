@@ -101,6 +101,7 @@ class Pick(BaseModel):
     chosen: str | None
     rejected: dict[str, str] = Field(default_factory=dict)
     base_url: str | None = None
+    model: str | None = None
 
 
 class RunState(BaseModel):

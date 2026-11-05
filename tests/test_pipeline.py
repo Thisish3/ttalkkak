@@ -63,7 +63,7 @@ def test_up_writes_all_stage_files_and_keeps_chosen(tmp_path):
         "state.json",
     ]:
         assert (run_dir / f).exists(), f
-    assert p.chosen == "c2" and stopped == ["kc1"]
+    assert p.chosen == "c2" and stopped == ["kc1", "kc2"]
 
 
 def test_interrupt_cleans_up_and_saves_state(tmp_path):
@@ -82,3 +82,122 @@ def test_resume_skips_done_stages(tmp_path):
     d.probe = lambda m: calls.append(m)
     run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d, resume=run_dir.name)
     assert calls == []
+
+
+class Gpu:
+    """Fake docker that tracks how many candidate servers run at once."""
+
+    def __init__(self):
+        self.active, self.peak, self.stopped = set(), 0, []
+
+    def launch(self, c, adapter, **kw):
+        cid = f"k{c.id}-{len(self.stopped) + len(self.active)}"
+        self.active.add(cid)
+        self.peak = max(self.peak, len(self.active))
+        return Launched(
+            candidate_id=c.id,
+            status="ready",
+            container=cid,
+            base_url=f"http://h/{c.id}",
+            models_json={},
+            logs="",
+            metrics="",
+        )
+
+    def stop(self, cid):
+        self.active.discard(cid)
+        self.stopped.append(cid)
+
+
+def gpu_deps(gpu, **kw):
+    d = deps([])
+    d.launch, d.stop = gpu.launch, gpu.stop
+    for k, v in kw.items():
+        setattr(d, k, v)
+    return d
+
+
+def test_candidates_run_one_at_a_time_and_winner_stays_up(tmp_path):
+    gpu = Gpu()
+    _, p = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(gpu))
+    assert gpu.peak == 1
+    assert p.chosen == "c2" and len(gpu.active) == 1
+    assert next(iter(gpu.active)).startswith("kc2") and p.base_url == "http://h/c2"
+
+
+def test_verify_error_rejects_candidate_and_still_writes_report(tmp_path):
+    import subprocess
+
+    def perf(url, model, out):
+        if "/c2/" in url:
+            raise subprocess.CalledProcessError(2, ["guidellm"])
+        return {"output_tok_s": 10.0}
+
+    gpu = Gpu()
+    run_dir, p = run_up(
+        M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(gpu, run_perf=perf)
+    )
+    assert p.chosen == "c1" and "검증 오류" in p.rejected["c2"]
+    assert (run_dir / "report.md").exists() and gpu.peak == 1
+
+
+def test_baseline_only_candidate_sets_baseline_and_is_never_chosen(tmp_path):
+    from ttalkkak.plan.memory import max_context_fit
+
+    heavy = M.model_copy(update={"weight_bytes": 6_270_000_000})
+    assert max_context_fit(heavy, G, "auto") < heavy.max_position
+    assert max_context_fit(heavy, G, "fp8") > max_context_fit(heavy, G, "auto")
+    sk = tmp_path / "skills" / "big"
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text("---\nname: big\ndescription: d\n---\nb\n")
+    (sk / "ttalkkak.yaml").write_text(
+        f"min_context: {max_context_fit(heavy, G, 'auto') + 1}\n"
+    )
+    seen = []
+
+    def acc(url, model, out):
+        seen.append(url)
+        return 0.6
+
+    gpu = Gpu()
+    _, p = run_up(
+        M.model_id,
+        ["big"],
+        tmp_path / "runs",
+        tmp_path / "skills",
+        gpu_deps(
+            gpu,
+            run_accuracy=acc,
+            probe=lambda m: ProbeResult(model=heavy, gpu=G),
+        ),
+    )
+    assert any("/c0/" in u for u in seen)
+    assert p.chosen == "c2" and gpu.peak == 1
+
+
+def test_nim_run_writes_report_and_chat_endpoint(tmp_path, monkeypatch):
+    from ttalkkak.pipeline import resolve_endpoint
+
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+    run_dir, _ = run_up(
+        "nim:meta/llama-3.1-8b-instruct", ["tooly"], tmp_path, SKILLS, deps([])
+    )
+    assert (run_dir / "report.md").exists()
+    url, model, key = resolve_endpoint(run_dir)
+    assert url == "https://integrate.api.nvidia.com/v1"
+    assert model == "meta/llama-3.1-8b-instruct" and key == "nvapi-test"
+
+
+def test_local_run_chat_endpoint(tmp_path):
+    from ttalkkak.pipeline import resolve_endpoint
+
+    run_dir, _ = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()))
+    assert resolve_endpoint(run_dir) == ("http://h/c2/v1", M.model_id, "EMPTY")
+
+
+def test_resolve_endpoint_missing_run_is_clear_error(tmp_path):
+    from ttalkkak.errors import TtalkkakError
+    from ttalkkak.pipeline import resolve_endpoint
+
+    with pytest.raises(TtalkkakError, match="run"):
+        resolve_endpoint(tmp_path / "nope")

@@ -28,7 +28,6 @@ def up(
     model: str = typer.Option(...),
     skills: str = typer.Option(""),
     resume: str | None = None,
-    keep_all: bool = False,
 ) -> None:
     deps = Deps(
         probe=probe,
@@ -41,13 +40,7 @@ def up(
     )
     try:
         run_dir, chosen = run_up(
-            model,
-            _names(skills),
-            ROOT / "runs",
-            ROOT / "skills",
-            deps,
-            resume,
-            keep_all,
+            model, _names(skills), ROOT / "runs", ROOT / "skills", deps, resume
         )
     except TtalkkakError as err:
         typer.echo(f"오류: {err}", err=True)
@@ -64,20 +57,18 @@ def chat(run: str = typer.Option(...), skills: str = typer.Option("")) -> None:
     import asyncio
 
     from ttalkkak.agent.runtime import build_agent
-    from ttalkkak.schemas import Pick, Plan
+    from ttalkkak.pipeline import resolve_endpoint
     from ttalkkak.skills.loader import load_skills
 
-    rd = ROOT / "runs" / run
-    chosen = Pick.model_validate_json((rd / "pick.json").read_text(encoding="utf-8"))
-    if not chosen.base_url:
-        typer.echo("선택된 엔드포인트가 없습니다", err=True)
-        raise typer.Exit(1)
-    plan = Plan.model_validate_json((rd / "plan.json").read_text(encoding="utf-8"))
-    model = next(c.model_id for c in plan.candidates if c.id == chosen.chosen)
+    try:
+        base_url, model, key = resolve_endpoint(ROOT / "runs" / run)
+    except TtalkkakError as err:
+        typer.echo(f"오류: {err}", err=True)
+        raise typer.Exit(err.exit_code) from err
     sk = load_skills(ROOT / "skills", _names(skills))
 
     async def loop():
-        agent, adapter = await build_agent(f"{chosen.base_url}/v1", model, sk)
+        agent, adapter = await build_agent(base_url, model, sk, api_key=key)
         msgs = []
         try:
             while (text := input("> ").strip()) not in ("", "exit"):
