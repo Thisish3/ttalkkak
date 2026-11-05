@@ -1,6 +1,15 @@
-# model_type -> vLLM parser names (checked against vllm/tool_parsers/__init__.py and
-# vllm/reasoning/__init__.py at vLLM main 811622c; verify.agent confirms them live)
-qwen2: {tool: hermes, reasoning: null}
-qwen3: {tool: hermes, reasoning: qwen3}
-llama: {tool: llama3_json, reasoning: null}
-mistral: {tool: mistral, reasoning: null}
+# model_type -> engine -> parser names. Checked against vLLM vllm/tool_parsers/__init__.py,
+# vllm/reasoning/__init__.py (main 811622c) and SGLang function_call/function_call_parser.py,
+# parser/reasoning_parser.py (main e838360). verify.agent confirms them live.
+qwen2:
+  vllm: {tool: hermes, reasoning: null}
+  sglang: {tool: qwen25, reasoning: null}
+qwen3:
+  vllm: {tool: hermes, reasoning: qwen3}
+  sglang: {tool: qwen25, reasoning: qwen3}
+llama:
+  vllm: {tool: llama3_json, reasoning: null}
+  sglang: {tool: llama3, reasoning: null}
+mistral:
+  vllm: {tool: mistral, reasoning: null}
+  sglang: {tool: mistral, reasoning: null}

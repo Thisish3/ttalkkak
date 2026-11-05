@@ -82,3 +82,11 @@ def test_baseline_only_candidate_when_auto_kv_cannot_fit_context():
     base = by_id["c0"]
     assert base.baseline_only and not base.blockers
     assert base.args["kv_cache_dtype"] == "auto" and base.args["max_model_len"] == 4096
+
+
+def test_parser_table_is_per_engine():
+    from ttalkkak.plan.parsers import parsers_for
+
+    assert parsers_for("qwen2", "vllm").tool == "hermes"
+    assert parsers_for("qwen2", "sglang").tool == "qwen25"
+    assert parsers_for("qwen2", "trtllm") is None

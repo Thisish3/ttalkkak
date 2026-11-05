@@ -11,10 +11,13 @@ class ParserEntry(BaseModel):
 
 
 @cache
-def _table() -> dict[str, ParserEntry]:
+def _table() -> dict[str, dict[str, ParserEntry]]:
     raw = yaml.safe_load(files("ttalkkak.data").joinpath("parsers.yaml").read_text())
-    return {k: ParserEntry.model_validate(v) for k, v in raw.items()}
+    return {
+        fam: {eng: ParserEntry.model_validate(e) for eng, e in engines.items()}
+        for fam, engines in raw.items()
+    }
 
 
-def parsers_for(family: str) -> ParserEntry | None:
-    return _table().get(family)
+def parsers_for(family: str, engine: str) -> ParserEntry | None:
+    return _table().get(family, {}).get(engine)

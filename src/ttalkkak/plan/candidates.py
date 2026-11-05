@@ -6,22 +6,28 @@ from ttalkkak.schemas import Candidate, Plan, ProbeResult, Requirements
 BASELINE_LEN = 4096  # gsm8k 프롬프트 + 생성이 들어가는 길이
 
 
-def _parser_args(family: str, req: Requirements) -> tuple[dict, list[str]]:
+def _parser_args(family: str, req: Requirements, engine: str) -> tuple[dict, list[str]]:
     args: dict = {}
     blockers: list[str] = []
-    entry = parsers_for(family)
+    entry = parsers_for(family, engine)
     if req.flags.get("tool_calling"):
         if entry and entry.tool:
-            args |= {"enable_auto_tool_choice": True, "tool_call_parser": entry.tool}
+            args["tool_call_parser"] = entry.tool
+            if engine == "vllm":
+                args["enable_auto_tool_choice"] = True
         else:
             who = ", ".join(req.sources.get("tool_calling", [])) or "요청"
-            blockers.append(f"no tool parser known for {family} (needed by {who})")
+            blockers.append(
+                f"no tool parser known for {family} on {engine} (needed by {who})"
+            )
     if req.flags.get("reasoning"):
         if entry and entry.reasoning:
             args["reasoning_parser"] = entry.reasoning
         else:
             who = ", ".join(req.sources.get("reasoning", [])) or "요청"
-            blockers.append(f"no reasoning parser known for {family} (needed by {who})")
+            blockers.append(
+                f"no reasoning parser known for {family} on {engine} (needed by {who})"
+            )
     return args, blockers
 
 
@@ -31,7 +37,7 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
         raise TtalkkakError(
             "로컬 서빙 계획에는 HF 모델 정보와 NVIDIA GPU가 필요합니다", 2
         )
-    parser_args, parser_blockers = _parser_args(m.family, req)
+    parser_args, parser_blockers = _parser_args(m.family, req, "vllm")
     out = []
     for i, kv in enumerate(["auto", "fp8"], start=1):
         fit = max_context_fit(m, g, kv)
