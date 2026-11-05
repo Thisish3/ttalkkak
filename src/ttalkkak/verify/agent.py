@@ -24,6 +24,25 @@ ASK_WEATHER = [
 ]
 ASK_TWO = [{"role": "user", "content": "Get the weather for Seoul and for Busan."}]
 ASK_THINK = [{"role": "user", "content": "Is 91 prime? Answer yes or no."}]
+ANSWER_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "answer",
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+        },
+    },
+}
+
+
+def _valid_json_answer(text: str) -> bool:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and isinstance(data.get("answer"), str)
 
 
 def _valid_call(r: ChatResult) -> bool:
@@ -94,6 +113,22 @@ def run_agent_checks(
                 name="single_tool_call",
                 passed=len(r.tool_calls) <= 1,
                 detail=f"{len(r.tool_calls)} calls",
+            )
+        )
+    if f.get("structured_output"):
+        r = chat(
+            client,
+            base_url,
+            model,
+            ASK_THINK,
+            extra={"response_format": ANSWER_SCHEMA},
+            api_key=api_key,
+        )
+        out.append(
+            CheckResult(
+                name="structured_output_valid",
+                passed=_valid_json_answer(r.content),
+                detail=r.content[:200],
             )
         )
     return out

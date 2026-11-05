@@ -24,6 +24,9 @@ def mock_transport(behavior: str) -> httpx.MockTransport:
         content = "" if calls else "Hello"
         if behavior == "think_leak":
             content = "<think>hmm</think>Hello"
+        if body.get("response_format"):
+            calls = []
+            content = "no" if behavior == "bad_json" else '{"answer": "no"}'
         if not stream:
             msg = {
                 "role": "assistant",

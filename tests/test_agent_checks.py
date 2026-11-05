@@ -59,3 +59,14 @@ def test_stream_assembles_split_arguments_and_ignores_usage_chunk():
 def test_only_requested_checks_run():
     names = results("good", Requirements(flags={"streaming": True}))
     assert set(names) == {"stream_matches_nonstream"}
+
+
+SO = Requirements(flags={"structured_output": True})
+
+
+def test_structured_output_passes_on_valid_json():
+    assert results("good", SO) == {"structured_output_valid": True}
+
+
+def test_structured_output_fails_on_plain_text():
+    assert results("bad_json", SO) == {"structured_output_valid": False}
