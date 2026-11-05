@@ -88,7 +88,8 @@ def test_launch_ready_collects_logs_and_models():
     )
     assert r.status == "ready" and r.container == "cid123"
     assert r.models_json["data"][0]["max_model_len"] == 4096
-    run_cmd = fake.calls[0]
+    assert fake.calls[0][:2] == ["docker", "pull"]
+    run_cmd = next(c for c in fake.calls if c[:2] == ["docker", "run"])
     assert "--gpus" in run_cmd and "vllm/vllm-openai:v0.33.0" in run_cmd
 
 
@@ -120,3 +121,86 @@ def test_failure_logs_on_stderr_are_read():
         sleep=lambda s: None,
     )
     assert r.failure == "oom"
+
+
+def test_pull_timeout_is_a_download_failure_not_a_traceback():
+    class SlowPull(FakeDocker):
+        def __call__(self, cmd, **kw):
+            if cmd[:2] == ["docker", "pull"]:
+                raise subprocess.TimeoutExpired(cmd, 1)
+            return super().__call__(cmd, **kw)
+
+    fake = SlowPull()
+    r = launch(
+        C, VllmAdapter(), run=fake, client=_client(200), wait_s=5, sleep=lambda s: None
+    )
+    assert r.status == "failed" and r.failure == "download"
+    assert not any(c[:2] == ["docker", "run"] for c in fake.calls)
+
+
+def test_interrupt_while_waiting_removes_container():
+    fake = FakeDocker()
+
+    def sleep(s):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        launch(C, VllmAdapter(), run=fake, client=_client(503), wait_s=5, sleep=sleep)
+    assert ["docker", "rm", "-f", "cid123"] in fake.calls
+
+
+def test_failed_docker_run_keeps_stderr():
+    class RunFails(FakeDocker):
+        def __call__(self, cmd, **kw):
+            if cmd[:2] == ["docker", "run"]:
+                self.calls.append(cmd)
+                return subprocess.CompletedProcess(
+                    cmd,
+                    125,
+                    stdout="",
+                    stderr="Bind for 0.0.0.0:8000 failed: port is already allocated",
+                )
+            return super().__call__(cmd, **kw)
+
+    fake = RunFails()
+    r = launch(
+        C, VllmAdapter(), run=fake, client=_client(503), wait_s=5, sleep=lambda s: None
+    )
+    assert r.status == "failed" and "port is already allocated" in r.logs
+    assert not any(
+        c[:2] in (["docker", "inspect"], ["docker", "logs"]) for c in fake.calls
+    )
+
+
+def test_free_port_checks_all_interfaces(monkeypatch):
+    seen = []
+
+    class Sock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def bind(self, addr):
+            seen.append(addr)
+
+    monkeypatch.setattr("ttalkkak.launch.docker.socket.socket", lambda: Sock())
+    free_port(8000)
+    assert seen[0] == ("0.0.0.0", 8000)
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        "INFO 11-05 Avg prompt throughput: 401.3 tokens/s, pid 403",
+        "Loading weights took 4.01 s",
+    ],
+)
+def test_numbers_alone_are_not_download_failures(log):
+    assert classify_failure(log, timed_out=False) == "unknown"
+
+
+def test_http_401_client_error_is_download():
+    log = "requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url"
+    assert classify_failure(log, timed_out=False) == "download"

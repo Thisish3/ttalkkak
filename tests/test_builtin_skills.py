@@ -33,3 +33,26 @@ def test_files_refuse_escape(tmp_path):
     assert list_dir(".", tmp_path) == ["a.txt"]
     with pytest.raises(ValueError):
         read_text("../etc/passwd", tmp_path)
+
+
+def test_pyexec_sandbox_flags_and_timeout_cleanup():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(cmd, 1)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    assert run_python("while True: pass", run=run) == "error: timeout"
+    cmd = calls[0]
+    for flag in [
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+    ]:
+        assert flag in cmd
+    assert any(f.startswith("--pids-limit=") for f in cmd)
+    name = cmd[cmd.index("--name") + 1]
+    assert ["docker", "rm", "-f", name] in calls

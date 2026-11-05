@@ -1,19 +1,30 @@
 import subprocess
+import uuid
 
 from fastmcp import FastMCP
 
 mcp = FastMCP("pyexec")
+IMAGE = "python:3.12-slim"
 
 
 def run_python(code: str, timeout_s: int = 10, run=subprocess.run) -> str:
+    name = f"ttalkkak-pyexec-{uuid.uuid4().hex[:12]}"
     cmd = [
         "docker",
         "run",
         "--rm",
         "--network=none",
+        "--name",
+        name,
         "--memory=256m",
         "--cpus=1",
-        "python:3.12-slim",
+        "--pids-limit=64",
+        "--read-only",
+        "--tmpfs=/tmp:size=16m",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+        IMAGE,
         "python",
         "-c",
         code,
@@ -21,6 +32,7 @@ def run_python(code: str, timeout_s: int = 10, run=subprocess.run) -> str:
     try:
         p = run(cmd, capture_output=True, text=True, timeout=timeout_s + 20)
     except subprocess.TimeoutExpired:
+        run(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=30)
         return "error: timeout"
     return p.stdout + (f"\nstderr:\n{p.stderr}" if p.stderr else "")
 
@@ -32,4 +44,5 @@ def python(code: str) -> str:
 
 
 if __name__ == "__main__":
+    subprocess.run(["docker", "pull", IMAGE], capture_output=True, timeout=600)
     mcp.run()

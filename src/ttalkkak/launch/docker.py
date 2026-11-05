@@ -11,8 +11,20 @@ from ttalkkak.schemas import Candidate, FailureKind, Launched
 _PATTERNS: list[tuple[FailureKind, tuple[str, ...]]] = [
     ("oom", ("out of memory", "no available memory for the cache blocks")),
     ("bad_arg", ("unrecognized arguments", "invalid choice", "error: argument")),
-    ("download", ("hfhubhttperror", "repositorynotfound", "gatedrepo", "401", "403")),
+    (
+        "download",
+        (
+            "hfhubhttperror",
+            "repositorynotfound",
+            "gatedrepo",
+            "401 client error",
+            "403 client error",
+            "unauthorized",
+            "pull access denied",
+        ),
+    ),
 ]
+PULL_TIMEOUT_S = 3600
 
 
 def check_docker(run=subprocess.run) -> None:
@@ -34,7 +46,7 @@ def free_port(preferred: int = 8000) -> int:
     for port in [preferred, *range(preferred + 1, preferred + 50)]:
         with socket.socket() as s:
             try:
-                s.bind(("127.0.0.1", port))
+                s.bind(("0.0.0.0", port))
             except OSError:
                 continue
             return port
@@ -57,6 +69,23 @@ def stop(container: str, run=subprocess.run) -> None:
     run(["docker", "rm", "-f", container], capture_output=True, text=True, timeout=60)
 
 
+def _failed(
+    c: Candidate,
+    logs: str,
+    timed_out: bool,
+    cid: str | None = None,
+    kind: FailureKind | None = None,
+) -> Launched:
+    return Launched(
+        candidate_id=c.id,
+        status="failed",
+        container=cid,
+        failure=kind or classify_failure(logs, timed_out),
+        log_tail=logs.splitlines()[-50:],
+        logs=logs,
+    )
+
+
 def launch(
     c: Candidate,
     adapter: EngineAdapter,
@@ -67,6 +96,17 @@ def launch(
 ) -> Launched:
     client = client or httpx.Client()
     spec = adapter.build_args(c)
+    try:
+        pulled = run(
+            ["docker", "pull", spec.image],
+            capture_output=True,
+            text=True,
+            timeout=PULL_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return _failed(c, f"docker pull {spec.image} timed out", True, kind="download")
+    if pulled.returncode != 0:
+        return _failed(c, pulled.stderr or "", False, kind="download")
     port = free_port()
     cmd = [
         "docker",
@@ -85,38 +125,38 @@ def launch(
         spec.image,
         *spec.args,
     ]
-    cid = _out(run, cmd).strip()
+    started = run(cmd, capture_output=True, text=True, timeout=120)
+    cid = (started.stdout or "").strip()
+    if started.returncode != 0 or not cid:
+        return _failed(c, (started.stderr or "") + (started.stdout or ""), False)
     base = f"http://127.0.0.1:{port}"
-    deadline, timed_out = time.monotonic() + wait_s, True
-    while time.monotonic() < deadline:
+    try:
+        deadline, timed_out = time.monotonic() + wait_s, True
+        while time.monotonic() < deadline:
+            if adapter.health(base, client):
+                timed_out = False
+                break
+            state = _out(run, ["docker", "inspect", "-f", "{{.State.Status}}", cid])
+            if state.strip() != "running":
+                timed_out = False
+                break
+            sleep(5)
+        got = run(["docker", "logs", cid], capture_output=True, text=True, timeout=60)
+        logs = (got.stdout or "") + (got.stderr or "")
         if adapter.health(base, client):
-            timed_out = False
-            break
-        state = _out(run, ["docker", "inspect", "-f", "{{.State.Status}}", cid])
-        if state.strip() != "running":
-            timed_out = False
-            break
-        sleep(5)
-    got = run(["docker", "logs", cid], capture_output=True, text=True, timeout=60)
-    logs = (got.stdout or "") + (got.stderr or "")
-    if adapter.health(base, client):
-        models = client.get(f"{base}/v1/models", timeout=10).json()
-        metrics = client.get(f"{base}/metrics", timeout=10).text
-        return Launched(
-            candidate_id=c.id,
-            status="ready",
-            base_url=base,
-            container=cid,
-            logs=logs,
-            metrics=metrics,
-            models_json=models,
-        )
+            models = client.get(f"{base}/v1/models", timeout=10).json()
+            metrics = client.get(f"{base}/metrics", timeout=10).text
+            return Launched(
+                candidate_id=c.id,
+                status="ready",
+                base_url=base,
+                container=cid,
+                logs=logs,
+                metrics=metrics,
+                models_json=models,
+            )
+    except BaseException:
+        stop(cid, run)
+        raise
     stop(cid, run)
-    return Launched(
-        candidate_id=c.id,
-        status="failed",
-        container=cid,
-        failure=classify_failure(logs, timed_out),
-        log_tail=logs.splitlines()[-50:],
-        logs=logs,
-    )
+    return _failed(c, logs, timed_out, cid)
