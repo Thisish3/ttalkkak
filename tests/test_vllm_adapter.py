@@ -10,10 +10,18 @@ A = VllmAdapter()
 
 
 def test_build_args_maps_flags():
-    c = Candidate(id="c1", engine="vllm", model_id="m/x",
-                  args={"max_model_len": 16384, "kv_cache_dtype": "fp8",
-                        "enable_auto_tool_choice": True, "tool_call_parser": "hermes",
-                        "gpu_memory_utilization": 0.9})
+    c = Candidate(
+        id="c1",
+        engine="vllm",
+        model_id="m/x",
+        args={
+            "max_model_len": 16384,
+            "kv_cache_dtype": "fp8",
+            "enable_auto_tool_choice": True,
+            "tool_call_parser": "hermes",
+            "gpu_memory_utilization": 0.9,
+        },
+    )
     spec = A.build_args(c)
     assert spec.image == "vllm/vllm-openai:v0.33.0"
     assert spec.args[:2] == ["--model", "m/x"]
@@ -24,15 +32,18 @@ def test_build_args_maps_flags():
 
 
 def test_false_bool_flag_is_omitted():
-    c = Candidate(id="c", engine="vllm", model_id="m",
-                  args={"enable_auto_tool_choice": False})
+    c = Candidate(
+        id="c", engine="vllm", model_id="m", args={"enable_auto_tool_choice": False}
+    )
     assert "--enable-auto-tool-choice" not in A.build_args(c).args
 
 
 def test_read_applied_from_logs_metrics_and_models():
-    a = A.read_applied((FIX / "startup_sample.log").read_text(),
-                       (FIX / "metrics_sample.txt").read_text(),
-                       {"data": [{"id": "m", "max_model_len": 16384}]})
+    a = A.read_applied(
+        (FIX / "startup_sample.log").read_text(),
+        (FIX / "metrics_sample.txt").read_text(),
+        {"data": [{"id": "m", "max_model_len": 16384}]},
+    )
     v = a.values
     assert v["max_model_len"].value == 16384
     assert v["kv_cache_dtype"].value == "fp8"

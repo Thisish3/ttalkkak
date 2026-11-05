@@ -25,9 +25,15 @@ def mock_transport(behavior: str) -> httpx.MockTransport:
         if behavior == "think_leak":
             content = "<think>hmm</think>Hello"
         if not stream:
-            msg = {"role": "assistant", "content": content,
-                   "tool_calls": [{"id": f"c{i}", "type": "function", "function": c}
-                                  for i, c in enumerate(calls)] or None}
+            msg = {
+                "role": "assistant",
+                "content": content,
+                "tool_calls": [
+                    {"id": f"c{i}", "type": "function", "function": c}
+                    for i, c in enumerate(calls)
+                ]
+                or None,
+            }
             return httpx.Response(200, json={"choices": [{"index": 0, "message": msg}]})
         if behavior == "stream_mismatch":
             content, calls = "Different", []
@@ -37,16 +43,37 @@ def mock_transport(behavior: str) -> httpx.MockTransport:
         for i, c in enumerate(calls):
             if behavior == "split_args":
                 a = c["arguments"]
-                chunks.append(_delta(tool_calls=[{
-                    "index": i, "id": f"c{i}", "type": "function",
-                    "function": {"name": c["name"], "arguments": a[:5]}}]))
-                chunks.append(_delta(tool_calls=[{"index": i,
-                                                  "function": {"arguments": a[5:]}}]))
+                chunks.append(
+                    _delta(
+                        tool_calls=[
+                            {
+                                "index": i,
+                                "id": f"c{i}",
+                                "type": "function",
+                                "function": {"name": c["name"], "arguments": a[:5]},
+                            }
+                        ]
+                    )
+                )
+                chunks.append(
+                    _delta(tool_calls=[{"index": i, "function": {"arguments": a[5:]}}])
+                )
             else:
-                chunks.append(_delta(tool_calls=[{"index": i, "id": f"c{i}",
-                                                  "type": "function", "function": c}]))
+                chunks.append(
+                    _delta(
+                        tool_calls=[
+                            {
+                                "index": i,
+                                "id": f"c{i}",
+                                "type": "function",
+                                "function": c,
+                            }
+                        ]
+                    )
+                )
         chunks.append({"choices": [], "usage": {"completion_tokens": 3}})
-        return httpx.Response(200, text=_sse(chunks),
-                              headers={"content-type": "text/event-stream"})
+        return httpx.Response(
+            200, text=_sse(chunks), headers={"content-type": "text/event-stream"}
+        )
 
     return httpx.MockTransport(handler)

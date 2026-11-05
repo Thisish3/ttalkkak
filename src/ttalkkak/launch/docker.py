@@ -17,8 +17,13 @@ _PATTERNS: list[tuple[FailureKind, tuple[str, ...]]] = [
 
 def check_docker(run=subprocess.run) -> None:
     try:
-        run(["docker", "info", "--format", "{{.ServerVersion}}"],
-            capture_output=True, text=True, timeout=15, check=True)
+        run(
+            ["docker", "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
     except (FileNotFoundError, subprocess.SubprocessError) as err:
         raise TtalkkakError(
             "docker 사용 불가: Docker를 설치하고 데몬을 켜 주세요", 3
@@ -49,21 +54,37 @@ def _out(run, cmd: list[str]) -> str:
 
 
 def stop(container: str, run=subprocess.run) -> None:
-    run(["docker", "rm", "-f", container], capture_output=True, text=True,
-        timeout=60)
+    run(["docker", "rm", "-f", container], capture_output=True, text=True, timeout=60)
 
 
-def launch(c: Candidate, adapter: EngineAdapter, run=subprocess.run,
-           client: httpx.Client | None = None, wait_s: int = 900,
-           sleep=time.sleep) -> Launched:
+def launch(
+    c: Candidate,
+    adapter: EngineAdapter,
+    run=subprocess.run,
+    client: httpx.Client | None = None,
+    wait_s: int = 900,
+    sleep=time.sleep,
+) -> Launched:
     client = client or httpx.Client()
     spec = adapter.build_args(c)
     port = free_port()
-    cmd = ["docker", "run", "-d", "--gpus", "all", "--ipc=host",
-           "-p", f"{port}:{spec.container_port}",
-           "-v", "ttalkkak-hf-cache:/root/.cache/huggingface",
-           "-e", "HF_TOKEN", *[f"-e{k}={v}" for k, v in spec.env.items()],
-           spec.image, *spec.args]
+    cmd = [
+        "docker",
+        "run",
+        "-d",
+        "--gpus",
+        "all",
+        "--ipc=host",
+        "-p",
+        f"{port}:{spec.container_port}",
+        "-v",
+        "ttalkkak-hf-cache:/root/.cache/huggingface",
+        "-e",
+        "HF_TOKEN",
+        *[f"-e{k}={v}" for k, v in spec.env.items()],
+        spec.image,
+        *spec.args,
+    ]
     cid = _out(run, cmd).strip()
     base = f"http://127.0.0.1:{port}"
     deadline, timed_out = time.monotonic() + wait_s, True
@@ -81,9 +102,21 @@ def launch(c: Candidate, adapter: EngineAdapter, run=subprocess.run,
     if adapter.health(base, client):
         models = client.get(f"{base}/v1/models", timeout=10).json()
         metrics = client.get(f"{base}/metrics", timeout=10).text
-        return Launched(candidate_id=c.id, status="ready", base_url=base,
-                        container=cid, logs=logs, metrics=metrics, models_json=models)
+        return Launched(
+            candidate_id=c.id,
+            status="ready",
+            base_url=base,
+            container=cid,
+            logs=logs,
+            metrics=metrics,
+            models_json=models,
+        )
     stop(cid, run)
-    return Launched(candidate_id=c.id, status="failed", container=cid,
-                    failure=classify_failure(logs, timed_out),
-                    log_tail=logs.splitlines()[-50:], logs=logs)
+    return Launched(
+        candidate_id=c.id,
+        status="failed",
+        container=cid,
+        failure=classify_failure(logs, timed_out),
+        log_tail=logs.splitlines()[-50:],
+        logs=logs,
+    )

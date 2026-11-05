@@ -41,11 +41,22 @@ def test_rejects_unknown_requirement_flag(tmp_path):
 
 
 def test_merge_takes_union_and_max_with_sources(tmp_path):
-    a = load_skill(make(tmp_path, "a", "name: a\ndescription: d",
-                        "requires:\n  tool_calling: true\nmin_context: 16384\n"))
-    b = load_skill(make(tmp_path, "b", "name: b\ndescription: d",
-                        "requires:\n  tool_calling: true\n  reasoning: true\n"
-                        "min_context: 32768\n"))
+    a = load_skill(
+        make(
+            tmp_path,
+            "a",
+            "name: a\ndescription: d",
+            "requires:\n  tool_calling: true\nmin_context: 16384\n",
+        )
+    )
+    b = load_skill(
+        make(
+            tmp_path,
+            "b",
+            "name: b\ndescription: d",
+            "requires:\n  tool_calling: true\n  reasoning: true\nmin_context: 32768\n",
+        )
+    )
     r = merge_requirements([a, b])
     assert r.flags == {"tool_calling": True, "reasoning": True}
     assert r.min_context == 32768

@@ -1,9 +1,17 @@
 from ttalkkak.plan.memory import kv_bytes_per_token, max_context_fit, usable_bytes
 from ttalkkak.schemas import GpuInfo, ModelInfo
 
-QWEN7 = ModelInfo(model_id="q", family="qwen2", num_layers=28, num_kv_heads=4,
-                  head_dim=128, dtype="float16", quantization="awq",
-                  max_position=32768, weight_bytes=5_580_000_000)
+QWEN7 = ModelInfo(
+    model_id="q",
+    family="qwen2",
+    num_layers=28,
+    num_kv_heads=4,
+    head_dim=128,
+    dtype="float16",
+    quantization="awq",
+    max_position=32768,
+    weight_bytes=5_580_000_000,
+)
 GPU8 = GpuInfo(name="RTX 3060 Ti", memory_mib=8192, compute_capability="8.6")
 
 

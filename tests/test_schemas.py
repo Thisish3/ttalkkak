@@ -2,8 +2,15 @@ from ttalkkak.schemas import Candidate, Requirements, RunState
 
 
 def test_candidate_roundtrip_keeps_blockers():
-    c = Candidate(id="c1", engine="vllm", model_id="m", args={"max_model_len": 8192},
-                  predicted={"kv_gib": 1.2}, reasons=["fits"], blockers=["x"])
+    c = Candidate(
+        id="c1",
+        engine="vllm",
+        model_id="m",
+        args={"max_model_len": 8192},
+        predicted={"kv_gib": 1.2},
+        reasons=["fits"],
+        blockers=["x"],
+    )
     assert Candidate.model_validate_json(c.model_dump_json()) == c
 
 

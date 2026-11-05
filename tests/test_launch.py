@@ -32,13 +32,16 @@ def test_free_port_skips_busy_port():
         s.close()
 
 
-@pytest.mark.parametrize("log,kind", [
-    ("torch.OutOfMemoryError: CUDA out of memory", "oom"),
-    ("ValueError: No available memory for the cache blocks", "oom"),
-    ("api_server.py: error: unrecognized arguments: --foo", "bad_arg"),
-    ("huggingface_hub.errors.HfHubHTTPError: 401", "download"),
-    ("something odd", "unknown"),
-])
+@pytest.mark.parametrize(
+    "log,kind",
+    [
+        ("torch.OutOfMemoryError: CUDA out of memory", "oom"),
+        ("ValueError: No available memory for the cache blocks", "oom"),
+        ("api_server.py: error: unrecognized arguments: --foo", "bad_arg"),
+        ("huggingface_hub.errors.HfHubHTTPError: 401", "download"),
+        ("something odd", "unknown"),
+    ],
+)
 def test_classify_failure(log, kind):
     assert classify_failure(log, timed_out=False) == kind
 
@@ -57,7 +60,9 @@ class FakeDocker:
         if cmd[:2] == ["docker", "run"]:
             out = "cid123\n"
         elif cmd[:2] == ["docker", "logs"]:
-            out = "CUDA out of memory" if self.exit_early else "Using max model len 4096"
+            out = (
+                "CUDA out of memory" if self.exit_early else "Using max model len 4096"
+            )
         elif cmd[:2] == ["docker", "inspect"]:
             out = "exited" if self.exit_early else "running"
         return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
@@ -67,7 +72,8 @@ def _client(status):
     def handler(req):
         if req.url.path == "/v1/models":
             return httpx.Response(
-                200, json={"data": [{"id": "m/x", "max_model_len": 4096}]})
+                200, json={"data": [{"id": "m/x", "max_model_len": 4096}]}
+            )
         if req.url.path == "/metrics":
             return httpx.Response(200, text="")
         return httpx.Response(status)
@@ -77,8 +83,9 @@ def _client(status):
 
 def test_launch_ready_collects_logs_and_models():
     fake = FakeDocker()
-    r = launch(C, VllmAdapter(), run=fake, client=_client(200), wait_s=5,
-               sleep=lambda s: None)
+    r = launch(
+        C, VllmAdapter(), run=fake, client=_client(200), wait_s=5, sleep=lambda s: None
+    )
     assert r.status == "ready" and r.container == "cid123"
     assert r.models_json["data"][0]["max_model_len"] == 4096
     run_cmd = fake.calls[0]
@@ -87,8 +94,9 @@ def test_launch_ready_collects_logs_and_models():
 
 def test_launch_failed_when_container_exits():
     fake = FakeDocker(exit_early=True)
-    r = launch(C, VllmAdapter(), run=fake, client=_client(503), wait_s=5,
-               sleep=lambda s: None)
+    r = launch(
+        C, VllmAdapter(), run=fake, client=_client(503), wait_s=5, sleep=lambda s: None
+    )
     assert r.status == "failed" and r.failure == "oom"
     assert ["docker", "rm", "-f", "cid123"] in fake.calls
 
@@ -98,10 +106,17 @@ def test_failure_logs_on_stderr_are_read():
         def __call__(self, cmd, **kw):
             r = super().__call__(cmd, **kw)
             if cmd[:2] == ["docker", "logs"]:
-                return subprocess.CompletedProcess(cmd, 0, stdout="",
-                                                   stderr="CUDA out of memory")
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout="", stderr="CUDA out of memory"
+                )
             return r
 
-    r = launch(C, VllmAdapter(), run=StderrDocker(exit_early=True),
-               client=_client(503), wait_s=5, sleep=lambda s: None)
+    r = launch(
+        C,
+        VllmAdapter(),
+        run=StderrDocker(exit_early=True),
+        client=_client(503),
+        wait_s=5,
+        sleep=lambda s: None,
+    )
     assert r.failure == "oom"

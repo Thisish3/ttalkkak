@@ -5,8 +5,14 @@ from ttalkkak.schemas import Requirements
 from ttalkkak.verify.agent import run_agent_checks
 from ttalkkak.verify.openai_client import chat
 
-ALL = Requirements(flags={"tool_calling": True, "reasoning": True, "streaming": True,
-                          "single_tool_call": True})
+ALL = Requirements(
+    flags={
+        "tool_calling": True,
+        "reasoning": True,
+        "streaming": True,
+        "single_tool_call": True,
+    }
+)
 
 
 def results(behavior, req=ALL):
@@ -32,12 +38,22 @@ def test_detects_two_calls_when_single_required():
 
 def test_stream_assembles_split_arguments_and_ignores_usage_chunk():
     c = httpx.Client(transport=mock_transport("split_args"))
-    r = chat(c, "http://m/v1", "m", [{"role": "user", "content": "x"}],
-             tools=[{"type": "function", "function": {
-                 "name": "get_weather", "parameters": {"type": "object"}}}],
-             stream=True)
+    r = chat(
+        c,
+        "http://m/v1",
+        "m",
+        [{"role": "user", "content": "x"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": "get_weather", "parameters": {"type": "object"}},
+            }
+        ],
+        stream=True,
+    )
     assert [(t.name, t.arguments) for t in r.tool_calls] == [
-        ("get_weather", '{"city": "Seoul"}')]
+        ("get_weather", '{"city": "Seoul"}')
+    ]
 
 
 def test_only_requested_checks_run():

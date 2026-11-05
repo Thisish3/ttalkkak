@@ -47,10 +47,16 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
                 id=f"c{i}",
                 engine="vllm",
                 model_id=m.model_id,
-                args={"kv_cache_dtype": kv, "max_model_len": length,
-                      "gpu_memory_utilization": 0.9} | parser_args,
-                predicted={"weight_gib": m.weight_bytes / 2**30,
-                           "kv_tokens_fit": float(fit)},
+                args={
+                    "kv_cache_dtype": kv,
+                    "max_model_len": length,
+                    "gpu_memory_utilization": 0.9,
+                }
+                | parser_args,
+                predicted={
+                    "weight_gib": m.weight_bytes / 2**30,
+                    "kv_tokens_fit": float(fit),
+                },
                 reasons=reasons,
                 blockers=blockers,
                 requires_accuracy=(kv == "fp8"),

@@ -16,8 +16,11 @@ def test_model_info_from_qwen_awq():
     info = model_info_from(
         "Qwen/Qwen2.5-7B-Instruct-AWQ",
         cfg,
-        {"model-00001.safetensors": 3_000, "model-00002.safetensors": 2_000,
-         "tokenizer.json": 7},
+        {
+            "model-00001.safetensors": 3_000,
+            "model-00002.safetensors": 2_000,
+            "tokenizer.json": 7,
+        },
     )
     assert info.family == "qwen2" and info.num_layers == 28 and info.num_kv_heads == 4
     assert info.head_dim == cfg["hidden_size"] // cfg["num_attention_heads"]
