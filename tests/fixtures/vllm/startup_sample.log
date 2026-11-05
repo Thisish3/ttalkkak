@@ -1,0 +1,5 @@
+# SYNTHETIC: built from vLLM log format strings; replace with a real capture (Task 15)
+INFO 11-05 12:00:00 [api_utils.py:273] non-default args: {'model': 'Qwen/Qwen2.5-7B-Instruct-AWQ', 'max_model_len': 16384, 'kv_cache_dtype': 'fp8', 'enable_auto_tool_choice': True, 'tool_call_parser': 'hermes'}
+INFO 11-05 12:00:05 [model.py:1926] Using max model len 16384
+INFO 11-05 12:00:20 [cuda.py:422] Using FLASH_ATTN backend.
+INFO 11-05 12:00:40 [kv_cache_utils.py:1862] GPU KV cache size: 71,632 tokens, Maximum concurrency for 16384 tokens per request: 4.37x
