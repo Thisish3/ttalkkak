@@ -32,9 +32,8 @@ def deps(stopped, launch_status="ready", interrupt=False):
             status=launch_status,
             container=f"k{c.id}",
             base_url=f"http://h/{c.id}",
-            models_json={},
+            collected={},
             logs="",
-            metrics="",
         )
 
     return Deps(
@@ -99,9 +98,8 @@ class Gpu:
             status="ready",
             container=cid,
             base_url=f"http://h/{c.id}",
-            models_json={},
+            collected={},
             logs="",
-            metrics="",
         )
 
     def stop(self, cid):

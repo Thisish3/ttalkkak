@@ -42,6 +42,7 @@ def _find(pattern: re.Pattern, text: str) -> tuple[str, str] | None:
 class VllmAdapter:
     name = "vllm"
     IMAGE = "vllm/vllm-openai:v0.33.0"
+    container_port = 8000
 
     def build_args(self, c: Candidate) -> ContainerSpec:
         args = ["--model", c.model_id, "--host", "0.0.0.0", "--port", "8000"]
@@ -53,7 +54,25 @@ class VllmAdapter:
                 args += [flag, str(val)]
         return ContainerSpec(image=self.IMAGE, args=args)
 
-    def read_applied(self, logs: str, metrics: str, models: dict) -> AppliedConfig:
+    def collect(self, base_url: str, client: httpx.Client) -> dict:
+        out: dict = {}
+        try:
+            r = client.get(f"{base_url}/v1/models", timeout=10)
+            if r.status_code == 200:
+                out["models"] = r.json()
+        except (httpx.HTTPError, ValueError):
+            pass
+        try:
+            r = client.get(f"{base_url}/metrics", timeout=10)
+            if r.status_code == 200:
+                out["metrics"] = r.text
+        except httpx.HTTPError:
+            pass
+        return out
+
+    def read_applied(self, logs: str, collected: dict) -> AppliedConfig:
+        metrics = collected.get("metrics", "")
+        models = collected.get("models", {})
         v = {k: AppliedValue(value=None, evidence="unknown") for k in _KEYS}
 
         def put(key, value, evidence):

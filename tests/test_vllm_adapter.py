@@ -41,8 +41,10 @@ def test_false_bool_flag_is_omitted():
 def test_read_applied_from_logs_metrics_and_models():
     a = A.read_applied(
         (FIX / "startup_sample.log").read_text(),
-        (FIX / "metrics_sample.txt").read_text(),
-        {"data": [{"id": "m", "max_model_len": 16384}]},
+        {
+            "metrics": (FIX / "metrics_sample.txt").read_text(),
+            "models": {"data": [{"id": "m", "max_model_len": 16384}]},
+        },
     )
     v = a.values
     assert v["max_model_len"].value == 16384
@@ -54,9 +56,20 @@ def test_read_applied_from_logs_metrics_and_models():
 
 
 def test_missing_values_are_unknown():
-    a = A.read_applied("", "", {})
+    a = A.read_applied("", {})
     assert a.values["attention_backend"].value is None
     assert a.values["attention_backend"].evidence == "unknown"
+
+
+def test_collect_gets_models_and_metrics_and_skips_failures():
+    def handler(req):
+        if req.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": []})
+        return httpx.Response(500)
+
+    got = A.collect("http://x", httpx.Client(transport=httpx.MockTransport(handler)))
+    assert got == {"models": {"data": []}}
+    assert A.container_port == 8000
 
 
 def test_health():

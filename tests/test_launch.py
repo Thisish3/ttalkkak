@@ -87,7 +87,7 @@ def test_launch_ready_collects_logs_and_models():
         C, VllmAdapter(), run=fake, client=_client(200), wait_s=5, sleep=lambda s: None
     )
     assert r.status == "ready" and r.container == "cid123"
-    assert r.models_json["data"][0]["max_model_len"] == 4096
+    assert r.collected["models"]["data"][0]["max_model_len"] == 4096
     assert fake.calls[0][:2] == ["docker", "pull"]
     run_cmd = next(c for c in fake.calls if c[:2] == ["docker", "run"])
     assert "--gpus" in run_cmd and "vllm/vllm-openai:v0.33.0" in run_cmd

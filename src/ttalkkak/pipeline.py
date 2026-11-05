@@ -126,9 +126,7 @@ def run_up(
                     baseline = acc
                 if c.baseline_only:
                     continue
-                applied = adapter.read_applied(
-                    item.logs, item.metrics, item.models_json
-                )
+                applied = adapter.read_applied(item.logs, item.collected)
                 v = CandidateVerdict(
                     candidate_id=c.id,
                     applied=applied,

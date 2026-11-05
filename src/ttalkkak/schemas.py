@@ -12,6 +12,8 @@ class GpuInfo(BaseModel):
     name: str
     memory_mib: int
     compute_capability: str
+    vendor: Literal["nvidia", "amd"] = "nvidia"
+    arch: str = ""
 
 
 class ModelInfo(BaseModel):
@@ -40,7 +42,7 @@ class Requirements(BaseModel):
 
 class Candidate(BaseModel):
     id: str
-    engine: Literal["vllm"]
+    engine: Literal["vllm", "sglang"]
     model_id: str
     args: dict[str, str | int | float | bool] = Field(default_factory=dict)
     predicted: dict[str, float] = Field(default_factory=dict)
@@ -63,8 +65,7 @@ class Launched(BaseModel):
     failure: FailureKind | None = None
     log_tail: list[str] = Field(default_factory=list)
     logs: str = ""
-    metrics: str = ""
-    models_json: dict = Field(default_factory=dict)
+    collected: dict = Field(default_factory=dict)
 
 
 class AppliedValue(BaseModel):

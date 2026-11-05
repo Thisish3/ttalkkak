@@ -144,16 +144,13 @@ def launch(
         got = run(["docker", "logs", cid], capture_output=True, text=True, timeout=60)
         logs = (got.stdout or "") + (got.stderr or "")
         if adapter.health(base, client):
-            models = client.get(f"{base}/v1/models", timeout=10).json()
-            metrics = client.get(f"{base}/metrics", timeout=10).text
             return Launched(
                 candidate_id=c.id,
                 status="ready",
                 base_url=base,
                 container=cid,
                 logs=logs,
-                metrics=metrics,
-                models_json=models,
+                collected=adapter.collect(base, client),
             )
     except BaseException:
         stop(cid, run)
