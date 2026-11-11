@@ -12,7 +12,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
-from ttalkkak.billing.bill import aggregate, billable, invoice_rows, read_log
+from ttalkkak.billing.bill import (
+    REJECTED,
+    aggregate,
+    billable,
+    invoice_rows,
+    read_log,
+)
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.tenants.store import TENANT_ID
@@ -102,9 +108,8 @@ def create_ops_api(
             if tenant not in data.get("tenants", []):
                 return Response(status_code=403)
         headers = {"x-ttalkkak-tenant": tenant, "x-ttalkkak-subject": subject}
-        salt = data.get("salts", {}).get(tenant)
-        if salt:
-            headers["x-ttalkkak-cache-salt"] = salt
+        # always set so a client-sent salt header never reaches the Lua filter
+        headers["x-ttalkkak-cache-salt"] = data.get("salts", {}).get(tenant) or ""
         return Response(status_code=200, headers=headers)
 
     async def pricing(request: Request) -> Response:
@@ -175,9 +180,12 @@ def create_ops_api(
         reqs: dict[tuple, int] = {}
         seen = set()
         for r in records:
-            if r["request_id"] in seen or not TENANT_ID.match(r["tenant"]):
+            if r["status"] in REJECTED or not TENANT_ID.match(r["tenant"]):
                 continue
-            seen.add(r["request_id"])
+            if r["request_id"]:
+                if (r["tenant"], r["request_id"]) in seen:
+                    continue
+                seen.add((r["tenant"], r["request_id"]))
             k = (r["tenant"], str(r["status"]))
             reqs[k] = reqs.get(k, 0) + 1
         lines = ["# TYPE ttalkkak_tokens_total counter"]

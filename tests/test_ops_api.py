@@ -190,3 +190,27 @@ def test_stack_includes_ops_serve(tmp_path):
 def test_authz_accepts_jwt_for_tenant_without_keys_or_limits(env):
     r = env[0].post("/authz/x", headers={"authorization": f"Bearer {token(['beta'])}"})
     assert r.status_code == 200 and r.headers["x-ttalkkak-tenant"] == "beta"
+
+
+def test_metrics_ignore_rejected_and_dedup_per_tenant(tmp_path):
+    now = datetime.now(UTC)
+    lines = [
+        logline(now, "same", "acme"),
+        logline(now, "same", "beta"),
+        logline(now, "x", "beta", status=401),
+    ]
+    st = TenantStore(tmp_path / "t.db")
+    app = create_ops_api(
+        tenants=lambda: json.loads(tenants_json(st)),
+        cost=COST,
+        log_source=lambda: lines,
+        auth=AuthConfig(issuer=ISS, client_id=CID, jwks=lambda: JWKS),
+    )
+    text = TestClient(app).get("/metrics").text
+    assert 'ttalkkak_requests_total{tenant="beta",status="200"} 1' in text
+    assert 'status="401"' not in text
+
+
+def test_authz_always_sets_cache_salt_header_for_shared_tenants(env):
+    r = env[0].post("/authz/x", headers={"authorization": f"Bearer {token(['beta'])}"})
+    assert r.headers["x-ttalkkak-cache-salt"] == ""

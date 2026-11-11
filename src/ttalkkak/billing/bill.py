@@ -7,9 +7,12 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from ttalkkak.cost.model import MTOK, Prices
+from ttalkkak.errors import TtalkkakError
 from ttalkkak.tenants.store import TENANT_ID
 
 TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens")
+# rejected by auth: the tenant header is whatever the client sent
+REJECTED = (401, 403)
 
 
 class Usage(BaseModel):
@@ -38,12 +41,14 @@ def read_log(lines: Iterable[str], stats: dict | None = None) -> Iterator[dict]:
         except (ValueError, KeyError, TypeError):
             skipped += 1
             continue
-        if not isinstance(r, dict):
+        if ts.tzinfo is None:
             skipped += 1
             continue
         yield {
             "ts": ts,
-            "request_id": str(r.get("request_id") or ""),
+            "request_id": ""
+            if r.get("request_id") in (None, "-")
+            else str(r["request_id"]),
             "tenant": str(r.get("tenant") or ""),
             "model": str(r.get("model") or "-"),
             "status": _int(r.get("status")),
@@ -54,17 +59,21 @@ def read_log(lines: Iterable[str], stats: dict | None = None) -> Iterator[dict]:
 
 
 def billable(records: Iterable[dict], start: datetime, end: datetime) -> Iterator[dict]:
-    """Records in [start, end), deduplicated by request_id, without 5xx or no tenant."""
+    """Records in [start, end) worth billing, deduplicated per (tenant, request_id).
+
+    Skips 5xx, requests rejected by auth and records without a valid tenant.
+    """
     seen = set()
     for r in records:
         if not start <= r["ts"] < end or r["status"] >= 500:
             continue
-        if not TENANT_ID.match(r["tenant"]):
+        if r["status"] in REJECTED or not TENANT_ID.match(r["tenant"]):
             continue
         if r["request_id"]:
-            if r["request_id"] in seen:
+            key = (r["tenant"], r["request_id"])
+            if key in seen:
                 continue
-            seen.add(r["request_id"])
+            seen.add(key)
         yield r
 
 
@@ -83,6 +92,9 @@ def aggregate(records: Iterable[dict], start: datetime, end: datetime) -> list[U
 def invoice_rows(
     usage: list[Usage], prices: Prices, discounts: dict[str, float]
 ) -> list[dict]:
+    for tenant, d in discounts.items():
+        if not isinstance(d, int | float) or not 0 <= d <= 1:
+            raise TtalkkakError(f"{tenant} 할인율은 0~1 사이 숫자여야 합니다: {d}", 2)
     rows = []
     for u in usage:
         fresh = max(0, u.input_tokens - u.cached_input_tokens)

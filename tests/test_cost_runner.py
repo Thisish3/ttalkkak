@@ -106,3 +106,47 @@ def test_run_cost_writes_json_and_markdown(tmp_path, monkeypatch):
     md = (run_dir / "cost.md").read_text()
     assert "원/100만 토큰" in md and "운영점" in md and "한계" in md
     assert (run_dir / "cost" / "power.csv").exists()
+
+
+def test_cache_run_failure_degrades_to_warning(tmp_path, monkeypatch):
+    run_dir = tmp_path / "r1"
+    shutil.copytree(FIX / "runs/vllm-nvidia", run_dir)
+    monkeypatch.setattr(
+        "ttalkkak.cost.runner.resolve_endpoint",
+        lambda d: ("http://h:8000/v1", "m", "EMPTY"),
+    )
+    reports = {"A": report([1, 2], T0), "B": report([8], T0 + 100, 2048, 0, 1)}
+
+    def fake_run(cmd, **kw):
+        out = Path(
+            next(a.split("path=")[1] for a in cmd if a.startswith("kind=json,path="))
+        )
+        name = out.stem[-1]
+        if name == "C":
+            raise subprocess.CalledProcessError(1, cmd)
+        out.write_text(json.dumps(reports[name]))
+
+    import subprocess
+
+    result, _ = run_cost(
+        run_dir, tmp_path / "c.yaml", run=fake_run,
+        popen=lambda *a, **k: FakePopen(csv(T0 - 1, T0 + 130)),
+    )  # fmt: skip
+    assert result.e_cached_j == 0 and any("캐시" in w for w in result.warnings)
+
+
+def test_ops_cost_reports_failed_load_without_traceback(tmp_path, monkeypatch):
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    from ttalkkak import ops_cli
+    from ttalkkak.cli import app
+
+    def boom(*a, **k):
+        raise subprocess.CalledProcessError(2, ["guidellm"])
+
+    monkeypatch.setattr("ttalkkak.cost.runner.run_cost", boom)
+    monkeypatch.setattr(ops_cli, "ROOT", tmp_path)
+    r = CliRunner().invoke(app, ["ops", "cost", "--run", "r1"])
+    assert r.exit_code == 1 and "guidellm" in r.output and r.exc_info[0] is SystemExit

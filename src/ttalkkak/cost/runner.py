@@ -10,6 +10,7 @@ from ttalkkak.cost.model import (
     load_or_create_config,
 )
 from ttalkkak.cost.power import POWER_CMD, Sample, energy_j, parse_nvsmi_csv
+from ttalkkak.errors import TtalkkakError
 from ttalkkak.pipeline import resolve_endpoint
 
 STREAMS = [1, 2, 4, 8, 16]
@@ -149,23 +150,38 @@ def run_cost(
     power = popen(
         POWER_CMD, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
     )
-    reports = {}
+    reports, warnings = {}, []
     try:
         for name, (data, streams) in WORKLOADS.items():
             out = work / f"guidellm-{name}.json"
-            run(
-                guidellm_cmd(base_url, model, data, out, streams, max_seconds),
-                check=True,
-                timeout=max_seconds * len(streams) * 3 + 600,
-            )
+            try:
+                run(
+                    guidellm_cmd(base_url, model, data, out, streams, max_seconds),
+                    check=True,
+                    timeout=max_seconds * len(streams) * 3 + 600,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                if name != "C":
+                    raise
+                warnings.append(
+                    "캐시 입력 측정(C)이 실패해 캐시 입력 에너지를 0으로 두었습니다"
+                )
+                continue
             reports[name] = json.loads(out.read_text())
     finally:
         power.terminate()
         csv_text = power.communicate(timeout=10)[0] or ""
         (work / "power.csv").write_text(csv_text)
     samples = parse_nvsmi_csv(csv_text)
-    a, b, c = (parse_energy_run(reports[k], samples) for k in "ABC")
+    a, b = (parse_energy_run(reports[k], samples) for k in "AB")
+    c = None
+    if "C" in reports:
+        try:
+            c = parse_energy_run(reports["C"], samples)
+        except TtalkkakError as err:
+            warnings.append(f"캐시 입력 측정(C)을 버렸습니다: {err}")
     result = compute(cfg, a, b, c, parse_points(reports["A"]))
+    result.warnings[:0] = warnings
     (run_dir / "cost.json").write_text(result.model_dump_json(indent=1))
     (run_dir / "cost.md").write_text(_markdown(result, created), encoding="utf-8")
     return result, created

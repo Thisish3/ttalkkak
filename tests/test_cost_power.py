@@ -40,3 +40,10 @@ def test_bad_rows_are_skipped():
 def test_power_cmd_samples_every_500ms_as_csv():
     assert POWER_CMD[0] == "nvidia-smi" and "-lms" in POWER_CMD and "500" in POWER_CMD
     assert any(a.startswith("--query-gpu=timestamp,power.draw") for a in POWER_CMD)
+
+
+def test_large_gap_inside_window_is_rejected():
+    rows = CSV.splitlines()[:2] + ["2026/11/11 12:00:09.500, 100.00 W, 1500 MHz, 50"]
+    s = parse_nvsmi_csv("\n".join(rows))
+    with pytest.raises(TtalkkakError, match="전력 기록"):
+        energy_j(s, s[0].t, s[0].t + 9.5)

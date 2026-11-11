@@ -166,9 +166,10 @@ def _dex(opt: GatewayOptions) -> list[dict]:
     return [
         {
             "apiVersion": "v1",
-            "kind": "ConfigMap",
+            "kind": "Secret",
             "metadata": _meta("dex", ns),
-            "data": {"config.yaml": dump([config])},
+            "type": "Opaque",
+            "stringData": {"config.yaml": dump([config])},
         },
         {
             "apiVersion": "apps/v1",
@@ -191,7 +192,9 @@ def _dex(opt: GatewayOptions) -> list[dict]:
                                 ],
                             }
                         ],
-                        "volumes": [{"name": "config", "configMap": {"name": "dex"}}],
+                        "volumes": [
+                            {"name": "config", "secret": {"secretName": "dex"}}
+                        ],
                     },
                 },
             },
@@ -619,6 +622,19 @@ def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
             "kind": "Service",
             "metadata": _meta(OPS_SERVICE, ns),
             "spec": {"selector": labels, "ports": [{"port": OPS_PORT}]},
+        },
+        {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": _meta(f"{OPS_SERVICE}-ingress", ns),
+            "spec": {
+                "podSelector": {"matchLabels": labels},
+                "policyTypes": ["Ingress"],
+                "ingress": [{"from": [
+                    {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}}},
+                    {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}}},
+                ]}],
+            },
         },
     ]  # fmt: skip
 

@@ -137,8 +137,8 @@ def test_external_issuer_skips_dex(store):
 
 def test_dex_has_public_cli_client_and_https_issuer(store, tmp_path):
     d = docs(store, hostname="tk.example")[1]
-    (cm,) = kind(d, "15-dex.yaml", "ConfigMap")
-    cfg = yaml.safe_load(cm["data"]["config.yaml"])
+    (sec,) = kind(d, "15-dex.yaml", "Secret")
+    cfg = yaml.safe_load(sec["stringData"]["config.yaml"])
     assert cfg["issuer"] == "https://tk.example/dex"
     (client,) = cfg["staticClients"]
     assert client["id"] == "ttalkkak-cli" and client["public"] is True
@@ -210,3 +210,16 @@ def test_cli_user_add_and_export_gateway(tmp_path, monkeypatch):
     assert "u1@acme" in dex and "pw-123456" not in dex
     r = run(app, ["ops", "tenants", "user-remove", "u1@acme", "--db", db])
     assert r.exit_code == 0 and yaml.safe_load(users.read_text()) == []
+
+
+def test_dex_users_live_in_a_secret_and_ops_serve_is_fenced(store):
+    import bcrypt
+
+    h = bcrypt.hashpw(b"pw-123456", bcrypt.gensalt()).decode()
+    d = docs(store, dex_users=[{"email": "u@a", "hash": h, "groups": ["acme"]}])[1]
+    assert not [x for x in d["15-dex.yaml"] if x["kind"] == "ConfigMap"]
+    (sec,) = [x for x in d["15-dex.yaml"] if x["kind"] == "Secret"]
+    assert h in sec["stringData"]["config.yaml"]
+    (np,) = [x for x in d["25-ops-serve.yaml"] if x["kind"] == "NetworkPolicy"]
+    allowed = json.dumps(np["spec"]["ingress"])
+    assert "envoy-gateway-system" in allowed and "prometheus" in allowed

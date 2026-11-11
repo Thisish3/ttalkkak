@@ -4,6 +4,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
+from ttalkkak.errors import TtalkkakError
+
 J_PER_KWH = 3.6e6
 MTOK = 1e6
 SECONDS_PER_YEAR = 365 * 86400
@@ -60,6 +62,10 @@ class CostResult(BaseModel):
 def solve_energy(
     a: EnergyRun, b: EnergyRun, c: EnergyRun | None
 ) -> tuple[float, float, float, list[str]]:
+    if a.output_tokens <= 0 or b.input_tokens <= 0 or a.input_tokens <= 0:
+        raise TtalkkakError(
+            "측정 토큰이 0입니다. guidellm 요청이 모두 실패했는지 확인하세요"
+        )
     warnings = []
     det = a.input_tokens * b.output_tokens - a.output_tokens * b.input_tokens
     scale = abs(a.input_tokens * b.output_tokens) or 1

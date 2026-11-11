@@ -91,3 +91,11 @@ def test_default_config_is_created_once(tmp_path):
     p.write_text(p.read_text().replace("pue: 1.4", "pue: 1.2"))
     cfg, created = load_or_create_config(p)
     assert not created and cfg.pue == 1.2
+
+
+def test_zero_token_runs_raise_clean_error():
+    from ttalkkak.errors import TtalkkakError
+
+    zero = EnergyRun(energy_j=10, input_tokens=0, cached_tokens=0, output_tokens=0)
+    with pytest.raises(TtalkkakError, match="토큰"):
+        solve_energy(A, zero, None)

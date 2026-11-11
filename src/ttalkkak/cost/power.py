@@ -60,7 +60,11 @@ def _watts_at(samples: list[Sample], t: float) -> float:
 
 
 def energy_j(
-    samples: list[Sample], t0: float, t1: float, min_coverage: float = 0.9
+    samples: list[Sample],
+    t0: float,
+    t1: float,
+    min_coverage: float = 0.9,
+    max_gap_s: float = 2.0,
 ) -> float:
     lo = max(t0, samples[0].t) if samples else t1
     hi = min(t1, samples[-1].t) if samples else t0
@@ -68,6 +72,10 @@ def energy_j(
         raise TtalkkakError(
             f"전력 기록이 측정 구간의 {min_coverage:.0%}를 덮지 못했습니다"
         )
+    inside = [s.t for s in samples if lo <= s.t <= hi]
+    edges = [lo, *inside, hi]
+    if max(b - a for a, b in pairwise(edges)) > max_gap_s:
+        raise TtalkkakError(f"전력 기록에 {max_gap_s:g}초보다 긴 빈 구간이 있습니다")
     points = [(lo, _watts_at(samples, lo))]
     points += [(s.t, s.watts) for s in samples if lo < s.t < hi]
     points.append((hi, _watts_at(samples, hi)))

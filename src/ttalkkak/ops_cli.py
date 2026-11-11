@@ -422,7 +422,12 @@ def bill(
     usage = b.aggregate(records(stats), start, end)
     tag = f"{from_}_{to}"
     inv = Path(out) / f"invoice-{tag}.csv"
-    b.write_invoice(b.invoice_rows(usage, prices, disc or {}), inv)
+    try:
+        rows = b.invoice_rows(usage, prices, disc or {})
+    except TtalkkakError as err:
+        typer.echo(f"오류: {err}", err=True)
+        raise typer.Exit(err.exit_code) from err
+    b.write_invoice(rows, inv)
     b.write_cloudevents(
         records({}), start, end, Path(out) / f"usage-{tag}.cloudevents.jsonl"
     )
@@ -485,17 +490,22 @@ def cost(
 ) -> None:
     """전력을 재며 부하를 걸어 토큰당 원가·권장 가격·운영점을 계산합니다."""
     _need_extra("guidellm")
-    from ttalkkak.cost.runner import run_cost
+    import subprocess
+
+    from ttalkkak.cost import runner
 
     run_dir = ROOT / "runs" / run
     cfg = Path(config) if config else run_dir / "cost.yaml"
     try:
-        _, created = run_cost(
+        _, created = runner.run_cost(
             run_dir, cfg, max_seconds=seconds, target_output_tok_s=target_output_tok_s
         )
     except TtalkkakError as err:
         typer.echo(f"오류: {err}", err=True)
         raise typer.Exit(err.exit_code) from err
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
+        typer.echo(f"오류: 부하 측정(guidellm) 실패: {err}", err=True)
+        raise typer.Exit(1) from err
     if created:
         typer.echo(
             f"{cfg} 기본값으로 계산했습니다. 값을 고친 뒤 다시 실행하세요", err=True

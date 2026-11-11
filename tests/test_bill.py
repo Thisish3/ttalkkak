@@ -120,3 +120,34 @@ def test_cli_bill_from_cluster_uses_gateway_logs(tmp_path, monkeypatch):
     assert r.exit_code == 0, r.output
     rows = list(csv.DictReader((tmp_path / "invoice-2026-11-01_2026-12-01.csv").open()))
     assert {x["tenant"] for x in rows} == {"acme", "beta"}
+
+
+def test_dedup_is_per_tenant_and_ignores_missing_ids():
+    recs = [
+        rec("2026-11-05T00:00:00Z", "same", "acme"),
+        rec("2026-11-05T00:00:00Z", "same", "beta"),
+        rec("2026-11-05T00:00:00Z", "-", "beta"),
+        rec("2026-11-05T00:00:01Z", "-", "beta"),
+    ]
+    u = {x.tenant: x for x in aggregate(read_log([json.dumps(r) for r in recs]), *NOV)}
+    assert u["acme"].requests == 1 and u["beta"].requests == 3
+
+
+def test_rejected_requests_are_not_billed():
+    recs = [rec("2026-11-05T00:00:00Z", f"x{s}", "beta", status=s) for s in (401, 403)]
+    assert aggregate(read_log([json.dumps(r) for r in recs]), *NOV) == []
+
+
+def test_naive_timestamps_are_skipped_not_crashing():
+    stats = {}
+    out = list(read_log([json.dumps(rec("2026-11-05T00:00:00", "n1", "acme"))], stats))
+    assert out == [] and stats["skipped"] == 1
+
+
+def test_discounts_must_be_between_0_and_1():
+    import pytest
+
+    from ttalkkak.errors import TtalkkakError
+
+    with pytest.raises(TtalkkakError):
+        invoice_rows(aggregate(read_log(lines()), *NOV), PRICES, {"acme": 1.5})
