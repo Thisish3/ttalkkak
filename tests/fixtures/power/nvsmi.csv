@@ -1,0 +1,4 @@
+timestamp, power.draw [W], clocks.current.sm [MHz], temperature.gpu
+2026/11/11 12:00:00.000, 100.00 W, 1500 MHz, 50
+2026/11/11 12:00:01.000, 200.00 W, 1500 MHz, 51
+2026/11/11 12:00:02.000, 200.00 W, 1500 MHz, 52
