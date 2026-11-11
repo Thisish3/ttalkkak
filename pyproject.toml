@@ -8,7 +8,7 @@ dependencies = ["pydantic==2.14.3", "httpx==0.28.1", "typer==0.27.3", "pyyaml"]
 [project.optional-dependencies]
 ops = [
   "huggingface-hub==2.4.0", "langchain==1.4.9", "langgraph==1.2.20", "langchain-openai",
-  "fastmcp==4.1.6", "starlette==1.10.0", "uvicorn==0.54.0",
+  "fastmcp==4.1.6", "starlette==1.10.0", "uvicorn==0.54.0", "bcrypt", "pyjwt[crypto]",
 ]
 measure = ["guidellm==0.8.1", "lm-eval[api]==0.4.13"]
 [dependency-groups]

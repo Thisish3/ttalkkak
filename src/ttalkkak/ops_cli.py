@@ -7,6 +7,8 @@ from ttalkkak.errors import TtalkkakError
 
 ops = typer.Typer(no_args_is_help=True, help="운영자용 명령: 서빙 실행, 내보내기, 화면")
 ROOT = Path.cwd()
+TK_HOME = Path.home() / ".ttalkkak"
+DB_OPT = typer.Option(None, "--db", help="기본 ~/.ttalkkak/tenants.db")
 
 
 def _names(skills: str) -> list[str]:
@@ -74,15 +76,27 @@ def chat(run: str = typer.Option(...), skills: str = typer.Option("")) -> None:
 @ops.command()
 def export(
     run: str = typer.Option(...),
-    target: str = typer.Option(..., help="k8s | kserve | llmd | dynamo"),
+    target: str = typer.Option(..., help="k8s | kserve | llmd | dynamo | gateway"),
     out: str = typer.Option(...),
     image: str | None = typer.Option(None, help="override image (required for dynamo)"),
     force: bool = False,
+    replicas: int = typer.Option(
+        1, help="gateway: vLLM replicas (cost.json wins if 1)"
+    ),
+    issuer: str | None = typer.Option(None, help="gateway: external OIDC issuer"),
+    hostname: str = typer.Option("ttalkkak.local", help="gateway: public hostname"),
+    db: str | None = DB_OPT,
 ) -> None:
     from ttalkkak.export import write_export
 
     try:
-        written = write_export(ROOT / "runs" / run, target, Path(out), force, image)
+        if target == "gateway":
+            written = _export_gateway(
+                ROOT / "runs" / run, Path(out), force, image, replicas, issuer,
+                hostname, db,
+            )  # fmt: skip
+        else:
+            written = write_export(ROOT / "runs" / run, target, Path(out), force, image)
     except TtalkkakError as err:
         typer.echo(f"오류: {err}", err=True)
         raise typer.Exit(err.exit_code) from err
@@ -151,13 +165,12 @@ def _serving():
 
 tenants = typer.Typer(no_args_is_help=True, help="테넌트와 API 키")
 ops.add_typer(tenants, name="tenants")
-DB_OPT = typer.Option(None, "--db", help="기본 ~/.ttalkkak/tenants.db")
 
 
 def _store(db: str | None):
     from ttalkkak.tenants.store import TenantStore
 
-    return TenantStore(Path(db) if db else Path.home() / ".ttalkkak" / "tenants.db")
+    return TenantStore(Path(db) if db else TK_HOME / "tenants.db")
 
 
 def _tenant_cmd(fn):
@@ -242,3 +255,101 @@ def tenants_set_cache(tid: str, mode: str, db: str | None = DB_OPT):
 def tenants_rotate_salt(tid: str, db: str | None = DB_OPT):
     v = _store(db).rotate_salt(tid)
     typer.echo(f"{tid} 캐시 salt 버전 {v}: 이전 캐시는 더 이상 재사용되지 않습니다")
+
+
+def _dex_users_path() -> Path:
+    return TK_HOME / "dex-users.yaml"
+
+
+def _load_dex_users() -> list[dict]:
+    import yaml
+
+    p = _dex_users_path()
+    return (yaml.safe_load(p.read_text(encoding="utf-8")) or []) if p.is_file() else []
+
+
+def _save_dex_users(users: list[dict]) -> None:
+    import yaml
+
+    from ttalkkak.client.config import write_private
+
+    write_private(_dex_users_path(), yaml.safe_dump(users, sort_keys=False))
+
+
+@tenants.command("user-add")
+@_tenant_cmd
+def tenants_user_add(
+    tid: str,
+    email: str,
+    password_stdin: bool = typer.Option(False, help="비밀번호를 표준입력에서 읽기"),
+    db: str | None = DB_OPT,
+):
+    """로그인 서버(Dex)에 사용자를 추가합니다. 사용자는 테넌트 하나에만 속합니다."""
+    import hashlib
+    import sys
+
+    import bcrypt
+
+    _store(db)._tenant(tid)
+    if password_stdin:
+        password = sys.stdin.readline().rstrip("\n")
+    else:
+        password = typer.prompt("비밀번호", hide_input=True, confirmation_prompt=True)
+    if len(password) < 8:
+        raise TtalkkakError("비밀번호는 8자 이상이어야 합니다", 2)
+    users = [u for u in _load_dex_users() if u["email"] != email]
+    users.append(
+        {
+            "email": email,
+            "username": email,
+            "userID": hashlib.sha256(email.encode()).hexdigest()[:32],
+            "hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+            "groups": [tid],
+        }
+    )
+    _save_dex_users(users)
+    typer.echo(
+        f"{email}을 테넌트 {tid}에 추가했습니다. `ops export --target gateway`로 반영하세요"
+    )
+
+
+@tenants.command("user-remove")
+@_tenant_cmd
+def tenants_user_remove(email: str, db: str | None = DB_OPT):
+    users = _load_dex_users()
+    left = [u for u in users if u["email"] != email]
+    if len(left) == len(users):
+        raise TtalkkakError(f"사용자 {email}이 없습니다", 2)
+    _save_dex_users(left)
+    typer.echo(f"{email}을 지웠습니다")
+
+
+def _export_gateway(run_dir, out, force, image, replicas, issuer, hostname, db):
+    from ttalkkak.cost.model import CostResult
+    from ttalkkak.gateway.manifests import GatewayOptions, render_stack
+
+    cost_path = run_dir / "cost.json"
+    cost = (
+        CostResult.model_validate_json(cost_path.read_text(encoding="utf-8"))
+        if cost_path.is_file()
+        else None
+    )
+    opt = GatewayOptions(
+        replicas=replicas,
+        issuer=issuer,
+        hostname=hostname,
+        image=image,
+        dex_users=_load_dex_users(),
+    )
+    files = render_stack(run_dir, _store(db), cost, opt)
+    existing = [out / n for n in files if (out / n).exists()]
+    if existing and not force:
+        raise TtalkkakError(f"{out}에 파일이 이미 있습니다 (--force로 덮어쓰기)", 2)
+    from ttalkkak.client.config import write_private
+
+    written = []
+    for name, text in files.items():
+        # 00-namespace.yaml and 15-dex.yaml carry key hashes and password hashes
+        write_private(out / name, text)
+        written.append(out / name)
+    return written
