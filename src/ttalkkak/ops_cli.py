@@ -408,3 +408,45 @@ def bill(
     if prune_logs and src.is_dir():
         for p in b.prune(src, retention_days, datetime.now(UTC)):
             typer.echo(f"삭제: {p}")
+
+
+@ops.command()
+def serve(
+    tenants_json: str | None = typer.Option(
+        None, help="tenants.json (클러스터 Secret)"
+    ),
+    db: str | None = DB_OPT,
+    cost: str | None = typer.Option(None, help="cost.json"),
+    logs: str | None = typer.Option(None, help="접근 로그 파일/디렉터리"),
+    logs_from_cluster: bool = typer.Option(False, help="Envoy 파드 로그를 API로 읽기"),
+    issuer: str = typer.Option(..., help="OIDC issuer"),
+    client_id: str = "ttalkkak-cli",
+    jwks_url: str | None = typer.Option(None, help="기본 <issuer>/keys"),
+    host: str = "127.0.0.1",
+    port: int = 8790,
+) -> None:
+    """게이트웨이 인증(/authz), 가격표, 사용량, 테넌트 지표 서버."""
+    _need_extra("uvicorn", "starlette", "jwt")
+    import uvicorn
+
+    from ttalkkak.ops_api.app import build_serve_app
+
+    if tenants_json is None:
+        from ttalkkak.client.config import write_private
+        from ttalkkak.gateway.manifests import tenants_json as snapshot
+
+        tenants_path = TK_HOME / "tenants.snapshot.json"
+        write_private(tenants_path, snapshot(_store(db)))
+    else:
+        tenants_path = Path(tenants_json)
+    app = build_serve_app(
+        tenants_path=tenants_path,
+        cost_path=Path(cost) if cost else None,
+        logs=Path(logs) if logs else None,
+        issuer=issuer,
+        client_id=client_id,
+        jwks_url=jwks_url or f"{issuer.rstrip('/')}/keys",
+        logs_from_cluster=logs_from_cluster,
+    )
+    typer.echo(f"ttalkkak ops serve: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")

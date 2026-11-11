@@ -62,6 +62,7 @@ def tenants_json(store: TenantStore) -> str:
     tenants = store.list_tenants()
     return json.dumps(
         {
+            "tenants": [t.id for t in tenants],
             "keys": store.key_hashes(),
             "salts": {t.id: s for t in tenants if (s := store.cache_salt(t.id))},
             "limits": {
@@ -531,6 +532,97 @@ def _gateway(store: TenantStore, opt: GatewayOptions, pool: str, ns: str) -> lis
     return docs
 
 
+OPS_IMAGE = "ttalkkak:local"
+
+
+def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
+    ns, labels = opt.namespace, {"app.kubernetes.io/name": OPS_SERVICE}
+    jwks = (
+        f"http://dex.{ns}.svc:5556/dex/keys"
+        if opt.issuer is None
+        else f"{opt.issuer.rstrip('/')}/keys"
+    )
+    args = [
+        "ops", "serve", "--host", "0.0.0.0", "--port", str(OPS_PORT),
+        "--tenants-json", "/etc/ttalkkak/tenants/tenants.json",
+        "--cost", "/etc/ttalkkak/cost/cost.json",
+        "--issuer", issuer_of(opt), "--client-id", CLI_CLIENT_ID,
+        "--jwks-url", jwks, "--logs-from-cluster",
+    ]  # fmt: skip
+    pod_reader = "ttalkkak-envoy-log-reader"
+    return [
+        {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": _meta(OPS_SERVICE, ns)},
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": _meta(pod_reader, "envoy-gateway-system"),
+            "rules": [
+                {"apiGroups": [""], "resources": ["pods", "pods/log"], "verbs": ["get", "list"]}
+            ],
+        },
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "RoleBinding",
+            "metadata": _meta(pod_reader, "envoy-gateway-system"),
+            "subjects": [{"kind": "ServiceAccount", "name": OPS_SERVICE, "namespace": ns}],
+            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": pod_reader},
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": _meta("ttalkkak-cost", ns),
+            "data": {"cost.json": cost.model_dump_json() if cost else "{}"},
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": _meta(OPS_SERVICE, ns, **labels),
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": labels},
+                "template": {
+                    "metadata": {
+                        "labels": labels,
+                        "annotations": {
+                            "prometheus.io/scrape": "true",
+                            "prometheus.io/port": str(OPS_PORT),
+                        },
+                    },
+                    "spec": {
+                        "serviceAccountName": OPS_SERVICE,
+                        "containers": [
+                            {
+                                "name": "ops",
+                                "image": OPS_IMAGE,
+                                "imagePullPolicy": "IfNotPresent",
+                                "args": args,
+                                "ports": [{"containerPort": OPS_PORT}],
+                                "readinessProbe": {
+                                    "httpGet": {"path": "/v1/auth-config", "port": OPS_PORT}
+                                },
+                                "volumeMounts": [
+                                    {"name": "tenants", "mountPath": "/etc/ttalkkak/tenants", "readOnly": True},
+                                    {"name": "cost", "mountPath": "/etc/ttalkkak/cost", "readOnly": True},
+                                ],
+                            }
+                        ],
+                        "volumes": [
+                            {"name": "tenants", "secret": {"secretName": "ttalkkak-tenants"}},
+                            {"name": "cost", "configMap": {"name": "ttalkkak-cost"}},
+                        ],
+                    },
+                },
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": _meta(OPS_SERVICE, ns),
+            "spec": {"selector": labels, "ports": [{"port": OPS_PORT}]},
+        },
+    ]  # fmt: skip
+
+
 def render_stack(
     run_dir: Path,
     store: TenantStore,
@@ -545,6 +637,7 @@ def render_stack(
         "00-namespace.yaml": dump(_namespace(store, opt)),
         "10-redis.yaml": dump(_redis(opt)),
         "20-vllm.yaml": dump(vllm),
+        "25-ops-serve.yaml": dump(_ops_serve(opt, cost)),
         "30-llmd.yaml": dump(_llmd(name, ns, pool)),
         "40-gateway.yaml": dump(_gateway(store, opt, name, ns)),
     }
@@ -591,6 +684,7 @@ helm upgrade -i aieg oci://docker.io/envoyproxy/ai-gateway-helm --version {aieg}
   -n envoy-ai-gateway-system
 kubectl create namespace {ns}
 kubectl -n {ns} create secret tls ttalkkak-tls --cert=tls.crt --key=tls.key  # for {host}
+docker build -t ttalkkak:local . && docker save ttalkkak:local | sudo k3s ctr images import -
 kubectl -n {ns} create secret generic grafana-admin --from-literal=password=<choose one>
 kubectl -n {ns} create secret generic hf-token --from-literal=HF_TOKEN=$HF_TOKEN
 ```

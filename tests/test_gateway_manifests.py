@@ -39,6 +39,7 @@ def test_files_and_order(store):
         "10-redis.yaml",
         "15-dex.yaml",
         "20-vllm.yaml",
+        "25-ops-serve.yaml",
         "30-llmd.yaml",
         "40-gateway.yaml",
         "50-observability.yaml",

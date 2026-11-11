@@ -63,7 +63,7 @@ class TenantStore:
         if not self.path.exists():
             os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600))
         os.chmod(self.path, 0o600)
-        self.db = sqlite3.connect(self.path)
+        self.db = sqlite3.connect(self.path, check_same_thread=False)
         self.db.executescript(SCHEMA)
         with self.db:
             self.db.execute(
