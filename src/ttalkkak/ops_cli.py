@@ -146,3 +146,98 @@ def _serving():
         "run_perf": run_perf,
     }
     return Deps, run_up, kw
+
+
+tenants = typer.Typer(no_args_is_help=True, help="테넌트와 API 키")
+ops.add_typer(tenants, name="tenants")
+DB_OPT = typer.Option(None, "--db", help="기본 ~/.ttalkkak/tenants.db")
+
+
+def _store(db: str | None):
+    from ttalkkak.tenants.store import TenantStore
+
+    return TenantStore(Path(db) if db else Path.home() / ".ttalkkak" / "tenants.db")
+
+
+def _tenant_cmd(fn):
+    import functools
+
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except TtalkkakError as err:
+            typer.echo(f"오류: {err}", err=True)
+            raise typer.Exit(err.exit_code) from err
+
+    return run
+
+
+@tenants.command("add")
+@_tenant_cmd
+def tenants_add(tid: str, name: str = typer.Option(...), db: str | None = DB_OPT):
+    _store(db).add_tenant(tid, name)
+    typer.echo(f"테넌트 {tid}를 추가했습니다")
+
+
+@tenants.command("list")
+@_tenant_cmd
+def tenants_list(db: str | None = DB_OPT):
+    st = _store(db)
+    counts: dict[str, int] = {}
+    for k in st.active_keys():
+        counts[k.tenant_id] = counts.get(k.tenant_id, 0) + 1
+    typer.echo(f"{'id':<16}{'이름':<16}{'분당 토큰':>10}  {'캐시':<10}{'활성 키':>6}")
+    for t in st.list_tenants():
+        limit = "-" if t.token_limit_per_min is None else str(t.token_limit_per_min)
+        typer.echo(
+            f"{t.id:<16}{t.name:<16}{limit:>10}  {t.cache_mode:<10}"
+            f"{counts.get(t.id, 0):>6}"
+        )
+
+
+@tenants.command("key-issue")
+@_tenant_cmd
+def tenants_key_issue(tid: str, db: str | None = DB_OPT):
+    typer.echo(_store(db).issue_key(tid))
+    typer.echo("이 키는 다시 볼 수 없습니다. 지금 안전한 곳에 저장하세요.", err=True)
+
+
+@tenants.command("key-rotate")
+@_tenant_cmd
+def tenants_key_rotate(tid: str, grace_hours: int = 24, db: str | None = DB_OPT):
+    typer.echo(_store(db).rotate_key(tid, grace_hours))
+    typer.echo(
+        f"새 키입니다. 이전 키는 {grace_hours}시간 뒤 만료되고, 이 키는 다시 볼 수 없습니다.",
+        err=True,
+    )
+
+
+@tenants.command("key-revoke")
+@_tenant_cmd
+def tenants_key_revoke(prefix: str, db: str | None = DB_OPT):
+    _store(db).revoke_key(prefix)
+    typer.echo(f"{prefix} 키를 폐기했습니다")
+
+
+@tenants.command("set-limit")
+@_tenant_cmd
+def tenants_set_limit(tid: str, per_min: str, db: str | None = DB_OPT):
+    if per_min != "none" and not per_min.isdigit():
+        raise TtalkkakError("분당 토큰은 숫자 또는 none입니다", 2)
+    _store(db).set_limit(tid, None if per_min == "none" else int(per_min))
+    typer.echo(f"{tid} 분당 토큰 한도: {per_min}")
+
+
+@tenants.command("set-cache")
+@_tenant_cmd
+def tenants_set_cache(tid: str, mode: str, db: str | None = DB_OPT):
+    _store(db).set_cache(tid, mode)
+    typer.echo(f"{tid} 캐시: {mode}")
+
+
+@tenants.command("rotate-salt")
+@_tenant_cmd
+def tenants_rotate_salt(tid: str, db: str | None = DB_OPT):
+    v = _store(db).rotate_salt(tid)
+    typer.echo(f"{tid} 캐시 salt 버전 {v}: 이전 캐시는 더 이상 재사용되지 않습니다")
