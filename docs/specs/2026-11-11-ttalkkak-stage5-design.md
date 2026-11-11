@@ -118,11 +118,23 @@ target_output_tok_s: null
 ## 5. 테넌트와 키 (`ttalkkak tenants`)
 
 - 저장소: `~/.ttalkkak/tenants.db`(SQLite). 테이블 `tenants(id, name, created_at, token_limit_per_min, cache_mode, salt_version)`, `keys(id, tenant_id, prefix, hash, created_at, revoked_at)`.
+- API 키는 SDK·자동화용이다(사람은 5.1의 로그인).
 - 키: 발급할 때만 원문을 한 번 보여 주고, 저장은 해시(SHA-256)와 앞 8자만. 형식 `tk_<tenant>_<random32>`.
 - `key-rotate`: 새 키 발급 + 이전 키에 만료 시각(기본 24시간 뒤)을 건다. `key-revoke`: 즉시 폐기.
 - `set-cache isolated|shared`: 격리(기본)면 게이트웨이가 `cache_salt = hash(tenant_id, salt_version)`을 요청에 넣는다. `rotate-salt`는 `salt_version`을 올려 기존 캐시와 더는 맞지 않게 한다(데이터 삭제 요청 대응).
 - 게이트웨이 반영: 변경 후 `ttalkkak tenants sync`(또는 `cluster up` 때 자동)가 키 해시 목록과 테넌트 정책을 쿠버네티스 Secret/설정으로 갱신.
 - 6단계 연결: 게이트웨이가 `/v1/pricing`(cost.json의 권장 가격)과 `/v1/usage`(그 키의 오늘·이번 달 토큰과 예상 금액)를 제공한다. 구현은 게이트웨이 뒤의 작은 ttalkkak 서비스(`ttalkkak ops serve`)이며, 같은 Gateway로 라우팅한다.
+
+## 5.1 로그인 (사람) + API 키 (프로그램)
+
+사용자 합의(2026-11-11): **브라우저 로그인과 API 키를 둘 다** 지원한다.
+
+- 인증 서버(OIDC 제공자): 오픈소스 **Dex**를 우선으로 한다(가볍고 쿠버네티스 친화적). 단계 0에서 Dex가 디바이스 코드 흐름(RFC 8628)을 지원하는지 확인하고, 안 되면 **Keycloak**으로 바꾼다(LEDGER에 기록). 사용자 계정은 인증 서버의 로컬 계정(정적 사용자)으로 시작한다.
+- 계정 → 테넌트: 인증 서버의 그룹을 테넌트 ID로 쓴다(`groups` 클레임). 한 사용자는 테넌트 하나에만 속한다(여러 개면 거절).
+- 콘솔 로그인: `ttalkkak login`(처음 `ttalkkak` 실행 시 자동) → 디바이스 코드와 주소를 보여 주고 브라우저를 연다 → 사용자가 인증 서버에서 로그인 → 클라이언트가 토큰을 받아 `~/.ttalkkak/credentials.json`(0600)에 저장. 접근 토큰 수명 15분, 갱신 토큰으로 자동 갱신. `ttalkkak logout`은 갱신 토큰을 폐기하고 파일을 지운다. `ttalkkak whoami`는 사용자·테넌트·남은 수명을 보여 준다.
+- 게이트웨이: Envoy Gateway SecurityPolicy로 **JWT(인증 서버 JWKS)와 API 키 둘 다** 받는다. 어느 쪽이든 테넌트 헤더(`x-ttalkkak-tenant`)와 주체 헤더(`x-ttalkkak-subject`: 사용자 ID 또는 키 접두어)로 바꿔 뒤로 넘긴다. 두 정책을 한 라우트에 같이 거는 방법은 단계 0에서 고정한 버전의 문서로 확정한다(안 되면 같은 Gateway에 경로를 둘로 나눈다).
+- 사용량·청구는 테넌트 단위로 합치고, 주체별 내역도 남긴다.
+- 운영자: `ttalkkak ops tenants user-add/user-remove`가 인증 서버 사용자와 그룹을 관리한다(Dex는 설정 파일 갱신 후 재시작, Keycloak은 Admin API).
 
 ## 6. 청구 근거 (`ttalkkak bill`)
 
@@ -166,6 +178,7 @@ target_output_tok_s: null
 | 원가 계산 | 단위 테스트: 연립 해, 불안정할 때 대체, 음수 처리, 운영점 선택, 필요 GPU 수, 기본 설정 생성 |
 | 전력 기록 | 가짜 `nvidia-smi` 출력으로 적분, 구간 앞뒤 자르기, 빈 기록 |
 | 테넌트 | 키 해시 저장, 원문 미저장, 교체 만료, 폐기, salt 교체 |
+| 로그인 | 가짜 OIDC 서버(테스트용 Starlette)로 디바이스 흐름, 대기(`authorization_pending`)·느려짐(`slow_down`)·만료·거절, 토큰 갱신, 로그아웃 폐기, 자격 파일 권한 0600 |
 | 배포 생성 | 생성 YAML을 기대 파일과 비교, 데스크탑에서 `kubectl apply --dry-run=server` |
 | 청구 | 고정 로그로 필터·중복·실패 제외·할인·CSV·CloudEvents |
 | ops API | Starlette TestClient: `/v1/pricing`, `/v1/usage`, 관리 API(로컬 전용 바인딩과 기존 보안 미들웨어 재사용) |
@@ -178,6 +191,7 @@ target_output_tok_s: null
 | 0 | 구성요소 버전 고정과 동작 확인, 메모리 사용량 기록, DCGM exporter의 WSL 동작 여부, vLLM 캐시 토큰·OTel 옵션 이름 | 환경 기록 작성. 안 되는 것은 대체안과 함께 LEDGER에 |
 | 1 | `cost`: Qwen2.5-0.5B 또는 1.5B | 원가표, 운영점, 전력·클럭 로그 |
 | 2 | `cluster up` | `status`가 전부 준비, 테넌트 2명의 키로 요청 성공 |
+| 2b | 로그인 | `ttalkkak login`으로 브라우저 로그인 후 같은 요청 성공, 로그아웃 후 401 |
 | 3 | 토큰 한도 | 한도 초과 시 429 |
 | 4 | 캐시 격리 | 같은 프롬프트: 다른 테넌트는 캐시 적중 0, 같은 테넌트는 적중(vLLM 지표·usage의 cached 토큰) |
 | 5 | `bill` | 실제 로그로 청구서, 손으로 계산한 값과 일치 |
