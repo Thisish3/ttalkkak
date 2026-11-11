@@ -357,8 +357,9 @@ def _export_gateway(run_dir, out, force, image, replicas, issuer, hostname, db):
 
 @ops.command()
 def bill(
-    logs: str = typer.Option(
-        ..., help="게이트웨이 접근 로그 파일 또는 *.jsonl 디렉터리"
+    logs: str | None = typer.Option(None, help="접근 로그 파일 또는 *.jsonl 디렉터리"),
+    from_cluster: bool = typer.Option(
+        False, help="게이트웨이 파드 로그를 kubectl로 읽기"
     ),
     from_: str = typer.Option(..., "--from", help="YYYY-MM-DD (포함, UTC)"),
     to: str = typer.Option(..., help="YYYY-MM-DD (제외, UTC)"),
@@ -386,10 +387,24 @@ def bill(
     except (ValueError, KeyError, OSError) as err:
         typer.echo(f"오류: 입력을 읽지 못했습니다: {err}", err=True)
         raise typer.Exit(2) from err
-    src = Path(logs)
+    if from_cluster == (logs is not None):
+        typer.echo("오류: --logs 또는 --from-cluster 중 하나를 주세요", err=True)
+        raise typer.Exit(2)
+    if from_cluster:
+        from ttalkkak.cluster.apply import gateway_logs
+
+        try:
+            cluster_lines = gateway_logs()
+        except TtalkkakError as err:
+            typer.echo(f"오류: {err}", err=True)
+            raise typer.Exit(err.exit_code) from err
+    src = Path(logs) if logs else Path(".")
     files = sorted(src.glob("*.jsonl")) if src.is_dir() else [src]
 
     def records(stats):
+        if from_cluster:
+            yield from b.read_log(cluster_lines, stats)
+            return
         for f in files:
             with f.open(encoding="utf-8") as fh:
                 yield from b.read_log(fh, stats)
@@ -405,7 +420,7 @@ def bill(
     typer.echo(
         f"{inv} · 테넌트 {len({u.tenant for u in usage})} · 건너뛴 줄 {stats.get('skipped', 0)}"
     )
-    if prune_logs and src.is_dir():
+    if prune_logs and logs and src.is_dir():
         for p in b.prune(src, retention_days, datetime.now(UTC)):
             typer.echo(f"삭제: {p}")
 
@@ -450,3 +465,65 @@ def serve(
     )
     typer.echo(f"ttalkkak ops serve: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+@ops.command()
+def cost(
+    run: str = typer.Option(...),
+    config: str | None = typer.Option(None, help="기본 runs/<run>/cost.yaml"),
+    target_output_tok_s: float | None = typer.Option(None, help="목표 출력 토큰/초"),
+    seconds: int = typer.Option(60, help="부하 한 단계 시간(초)"),
+) -> None:
+    """전력을 재며 부하를 걸어 토큰당 원가·권장 가격·운영점을 계산합니다."""
+    _need_extra("guidellm")
+    from ttalkkak.cost.runner import run_cost
+
+    run_dir = ROOT / "runs" / run
+    cfg = Path(config) if config else run_dir / "cost.yaml"
+    try:
+        _, created = run_cost(
+            run_dir, cfg, max_seconds=seconds, target_output_tok_s=target_output_tok_s
+        )
+    except TtalkkakError as err:
+        typer.echo(f"오류: {err}", err=True)
+        raise typer.Exit(err.exit_code) from err
+    if created:
+        typer.echo(
+            f"{cfg} 기본값으로 계산했습니다. 값을 고친 뒤 다시 실행하세요", err=True
+        )
+    typer.echo((run_dir / "cost.md").read_text(encoding="utf-8"))
+
+
+cluster = typer.Typer(no_args_is_help=True, help="쿠버네티스에 배포·상태·삭제")
+ops.add_typer(cluster, name="cluster")
+
+
+@cluster.command("up")
+@_tenant_cmd
+def cluster_up(out: str = typer.Option(...), wait: int = 300):
+    from ttalkkak.cluster.apply import apply_dir
+
+    for name in apply_dir(Path(out), wait_s=wait):
+        typer.echo(f"적용: {name}")
+    typer.echo("준비됐습니다: ttalkkak ops cluster status")
+
+
+@cluster.command("status")
+@_tenant_cmd
+def cluster_status(namespace: str = "ttalkkak"):
+    from ttalkkak.cluster.apply import status
+
+    typer.echo(f"{'파드':<44}{'준비':>6}{'재시작':>8}  상태")
+    for r in status(namespace):
+        typer.echo(f"{r['name']:<44}{r['ready']:>6}{r['restarts']:>8}  {r['phase']}")
+
+
+@cluster.command("down")
+@_tenant_cmd
+def cluster_down(out: str = typer.Option(...), yes: bool = False):
+    from ttalkkak.cluster.apply import down
+
+    if not yes:
+        raise TtalkkakError("모든 구성요소를 지웁니다. 계속하려면 --yes", 2)
+    down(Path(out))
+    typer.echo("삭제했습니다")

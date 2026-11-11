@@ -106,3 +106,17 @@ def test_cli_bill_writes_invoice_and_events(tmp_path):
     assert {x["tenant"] for x in rows} == {"acme", "beta"}
     assert (tmp_path / "usage-2026-11-01_2026-12-01.cloudevents.jsonl").exists()
     assert "건너뛴 줄 1" in r.output
+
+
+def test_cli_bill_from_cluster_uses_gateway_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr("ttalkkak.cluster.apply.gateway_logs", lambda: lines())
+    cost = tmp_path / "cost.json"
+    cost.write_text(json.dumps({"price_krw_per_mtok": PRICES.model_dump()}))
+    r = CliRunner().invoke(
+        app,
+        ["ops", "bill", "--from-cluster", "--from", "2026-11-01", "--to", "2026-12-01",
+         "--cost", str(cost), "--out", str(tmp_path)],
+    )  # fmt: skip
+    assert r.exit_code == 0, r.output
+    rows = list(csv.DictReader((tmp_path / "invoice-2026-11-01_2026-12-01.csv").open()))
+    assert {x["tenant"] for x in rows} == {"acme", "beta"}
