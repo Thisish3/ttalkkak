@@ -550,6 +550,9 @@ def render_stack(
     }
     if opt.issuer is None:
         files["15-dex.yaml"] = dump(_dex(opt))
+    from ttalkkak.gateway.observability import render_observability
+
+    files.update(render_observability(cost, opt))
     files["README.md"] = README.format(
         ns=ns,
         host=opt.hostname,
@@ -572,6 +575,7 @@ README = """# ttalkkak gateway stack
 | 30-llmd.yaml | InferencePool + endpoint picker (EPP) |
 | 25-ops-serve.yaml | ttalkkak ops serve: /authz, /v1/pricing, /v1/usage, /metrics |
 | 40-gateway.yaml | Gateway, AIGatewayRoute (token costs), auth, cache salt, limits |
+| 50-observability.yaml | Prometheus (+alerts.yaml), Grafana (grafana/*.json), OTel Collector, Jaeger, DCGM exporter |
 
 Prerequisites (versions pinned in ttalkkak/gateway/versions.py):
 
@@ -587,6 +591,7 @@ helm upgrade -i aieg oci://docker.io/envoyproxy/ai-gateway-helm --version {aieg}
   -n envoy-ai-gateway-system
 kubectl create namespace {ns}
 kubectl -n {ns} create secret tls ttalkkak-tls --cert=tls.crt --key=tls.key  # for {host}
+kubectl -n {ns} create secret generic grafana-admin --from-literal=password=<choose one>
 kubectl -n {ns} create secret generic hf-token --from-literal=HF_TOKEN=$HF_TOKEN
 ```
 

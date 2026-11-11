@@ -41,8 +41,10 @@ def test_files_and_order(store):
         "20-vllm.yaml",
         "30-llmd.yaml",
         "40-gateway.yaml",
+        "50-observability.yaml",
+        "alerts.yaml",
     ]
-    assert "README.md" in files
+    assert "README.md" in files and "grafana/usage.json" in files
 
 
 def test_vllm_replicas_usage_flag_and_scrape(store):

@@ -19,3 +19,7 @@ DCGM_EXPORTER_IMAGE = "nvcr.io/nvidia/k8s/dcgm-exporter:4.9.0"
 # vLLM fills usage.prompt_tokens_details.cached_tokens only with this flag.
 VLLM_CACHED_USAGE_FLAG = "--enable-prompt-tokens-details"
 AI_GATEWAY_METADATA_NS = "io.envoy.ai_gateway"
+PROMETHEUS_IMAGE = "prom/prometheus:v3.16.0"
+GRAFANA_IMAGE = "grafana/grafana:13.2.6"
+OTEL_COLLECTOR_IMAGE = "otel/opentelemetry-collector:0.165.0"
+JAEGER_IMAGE = "jaegertracing/jaeger:2.23.0"
