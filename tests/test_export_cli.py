@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ttalkkak import cli
+from ttalkkak import cli, ops_cli
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.export import write_export
 
@@ -44,19 +44,46 @@ def test_cli_export_exit_codes(tmp_path, monkeypatch):
     import shutil
 
     shutil.copytree(RUNS / "vllm-nvidia", runs / "r1")
-    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(ops_cli, "ROOT", tmp_path)
     r = CliRunner().invoke(
         cli.app,
-        ["export", "--run", "r1", "--target", "k8s", "--out", str(tmp_path / "out")],
+        [
+            "ops",
+            "export",
+            "--run",
+            "r1",
+            "--target",
+            "k8s",
+            "--out",
+            str(tmp_path / "out"),
+        ],
     )
     assert r.exit_code == 0 and (tmp_path / "out" / "deployment.yaml").exists()
     r = CliRunner().invoke(
         cli.app,
-        ["export", "--run", "r1", "--target", "kserve", "--out", str(tmp_path / "o2")],
+        [
+            "ops",
+            "export",
+            "--run",
+            "r1",
+            "--target",
+            "kserve",
+            "--out",
+            str(tmp_path / "o2"),
+        ],
     )
     assert r.exit_code == 0
     r = CliRunner().invoke(
         cli.app,
-        ["export", "--run", "r1", "--target", "dynamo", "--out", str(tmp_path / "o3")],
+        [
+            "ops",
+            "export",
+            "--run",
+            "r1",
+            "--target",
+            "dynamo",
+            "--out",
+            str(tmp_path / "o3"),
+        ],
     )
     assert r.exit_code == 2

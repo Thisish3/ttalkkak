@@ -18,7 +18,7 @@ ttalkkak은 이런 상태를 **띄운 뒤에 확인**합니다. 자세한 배경
 ## 동작 방식
 
 ```
-ttalkkak up --model Qwen/Qwen2.5-7B-Instruct-AWQ --skills web-fetch,code-exec
+ttalkkak ops up --model Qwen/Qwen2.5-7B-Instruct-AWQ --skills web-fetch,code-exec
 ```
 
 1. **skill 요구사항 합치기**: 각 skill의 `ttalkkak.yaml`(tool calling, reasoning, streaming, structured output, 최소 문맥 등)을 합치고, 항목마다 어느 skill 때문인지 기록합니다.
@@ -34,6 +34,13 @@ ttalkkak up --model Qwen/Qwen2.5-7B-Instruct-AWQ --skills web-fetch,code-exec
 
 단계마다 결과가 `runs/<id>/{probe,plan,launch,verify,pick}.json`으로 저장되고, `--resume <id>`로 probe·plan을 건너뛰고 이어서 실행할 수 있습니다.
 
+## 설치
+
+```bash
+uv tool install ttalkkak                    # 사용자: 콘솔 에이전트 (ttalkkak)
+uv tool install "ttalkkak[ops,measure]"     # 운영자: ttalkkak ops ...
+```
+
 ## 시작하기
 
 요구사항: NVIDIA GPU, Docker(`--gpus all` 사용 가능), Python 3.12, [uv](https://docs.astral.sh/uv/).
@@ -44,8 +51,8 @@ cd ttalkkak
 uv sync --all-extras
 export HF_TOKEN=...        # gated 모델이면 필요, 컨테이너에 그대로 전달됩니다
 
-uv run ttalkkak up --model Qwen/Qwen2.5-1.5B-Instruct --skills code-exec
-uv run ttalkkak chat --run <runs 아래 id> --skills code-exec
+uv run ttalkkak ops up --model Qwen/Qwen2.5-1.5B-Instruct --skills code-exec
+uv run ttalkkak ops chat --run <runs 아래 id> --skills code-exec
 ```
 
 엔진은 vLLM(c1 KV auto, c2 KV fp8)과 SGLang(c3)을 모두 후보로 돌리고, NVIDIA는 `nvidia-smi`, AMD는 `amd-smi`로 감지해 이미지와 GPU 플래그를 바꿉니다.
@@ -53,10 +60,10 @@ uv run ttalkkak chat --run <runs 아래 id> --skills code-exec
 ### 배포 매니페스트로 내보내기
 
 ```bash
-uv run ttalkkak export --run <id> --target k8s     --out deploy/   # Deployment + Service
-uv run ttalkkak export --run <id> --target kserve  --out deploy/   # LLMInferenceService (vLLM)
-uv run ttalkkak export --run <id> --target llmd    --out deploy/   # llm-d v1.0.0 kustomize overlay
-uv run ttalkkak export --run <id> --target dynamo  --out deploy/ --image <dynamo runtime image>
+uv run ttalkkak ops export --run <id> --target k8s     --out deploy/   # Deployment + Service
+uv run ttalkkak ops export --run <id> --target kserve  --out deploy/   # LLMInferenceService (vLLM)
+uv run ttalkkak ops export --run <id> --target llmd    --out deploy/   # llm-d v1.0.0 kustomize overlay
+uv run ttalkkak ops export --run <id> --target dynamo  --out deploy/ --image <dynamo runtime image>
 ```
 
 검증을 통과한 후보의 인자와 이미지를 그대로 씁니다. 각 디렉터리의 `README.md`에 Secret 생성과 적용 명령이 있습니다.
@@ -64,7 +71,7 @@ uv run ttalkkak export --run <id> --target dynamo  --out deploy/ --image <dynamo
 ### 웹 화면
 
 ```bash
-uv run ttalkkak ui        # http://127.0.0.1:8787
+uv run ttalkkak ops ui        # http://127.0.0.1:8787
 ```
 
 HF 모델 검색(가중치 기준으로 이 GPU에 들어가는지 표시), skill 선택, 실행과 단계 진행, 리포트, 내보내기를 브라우저에서 합니다. 기본으로 127.0.0.1에만 열고, 다른 Host 헤더와 다른 출처의 POST는 거부합니다.
@@ -117,8 +124,8 @@ GPU가 필요한 부분은 모두 주입 가능한 함수 뒤에 있고, 테스�
 |---|---|
 | 1 (구현 완료) | RTX 3060 Ti 8GB, vLLM, HF 모델 또는 NIM API, 기본 skill 3개, CLI |
 | 2 (구현 완료) | SGLang 어댑터, AMD MI300X(ROCm) |
-| 3 (구현 완료) | `ttalkkak export`: k8s / KServe / llm-d / Dynamo 매니페스트 |
-| 4 (구현 완료) | `ttalkkak ui`: HF 모델 검색 → 실행 → 리포트 → 내보내기 |
+| 3 (구현 완료) | `ttalkkak ops export`: k8s / KServe / llm-d / Dynamo 매니페스트 |
+| 4 (구현 완료) | `ttalkkak ops ui`: HF 모델 검색 → 실행 → 리포트 → 내보내기 |
 | 다음 | 각 단계 실측(3060 Ti, MI300X, 실제 클러스터, 브라우저) |
 
 ## 알려진 한계
