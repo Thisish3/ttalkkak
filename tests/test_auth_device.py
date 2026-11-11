@@ -140,3 +140,79 @@ def test_cli_login_reads_issuer_from_gateway(tmp_path, monkeypatch):
     r = CliRunner().invoke(cli.app, ["login", "--endpoint", "https://gw.test"])
     assert r.exit_code == 0, r.output
     assert load_config().client_id == "cli2"
+
+
+def _client(handler):
+    import httpx
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_server_error_body_becomes_clean_error(tmp_path, monkeypatch):
+    import httpx
+
+    _, srv = make_oidc()
+
+    def handler(req):
+        if req.url.path == "/token":
+            return httpx.Response(502, text="<html>bad gateway</html>")
+        return srv.handler(req)
+
+    d = DeviceLogin(ISSUER, "c", _client(handler), sleep=lambda s: None)
+    with pytest.raises(TtalkkakError, match="502"):
+        d.poll(d.start())
+    monkeypatch.setattr("ttalkkak.client.config.HOME", tmp_path)
+    monkeypatch.setattr(cli, "_http", lambda: _client(handler))
+    monkeypatch.setattr(cli, "_open_browser", lambda url: None)
+    monkeypatch.setattr("ttalkkak.auth.device.time.sleep", lambda s: None)
+    r = CliRunner().invoke(
+        cli.app, ["login", "--endpoint", "https://gw.test", "--issuer", ISSUER]
+    )
+    assert (
+        r.exit_code != 0 and r.exception is None or isinstance(r.exception, SystemExit)
+    )
+    assert "502" in r.output
+
+
+def test_logout_recovers_from_corrupt_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr("ttalkkak.client.config.HOME", tmp_path)
+    (tmp_path / "credentials.json").write_text("{not json")
+    assert load_tokens(tmp_path) is None
+    r = CliRunner().invoke(cli.app, ["logout"])
+    assert r.exit_code == 0 and not (tmp_path / "credentials.json").exists()
+
+
+def test_plain_http_gateway_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr("ttalkkak.client.config.HOME", tmp_path)
+    r = CliRunner().invoke(cli.app, ["login", "--endpoint", "http://gw.example.com"])
+    assert r.exit_code == 2 and "https" in r.output
+
+
+def test_non_object_id_token_claims_are_ignored():
+    import base64
+
+    payload = base64.urlsafe_b64encode(b'["a"]').decode().rstrip("=")
+    from ttalkkak.auth.device import _claims
+
+    assert _claims(f"h.{payload}.s") == {}
+
+
+def test_existing_loose_file_is_tightened_before_write(tmp_path):
+    from ttalkkak.client.config import write_private
+
+    p = tmp_path / "c.json"
+    p.write_text("old")
+    os.chmod(p, 0o644)
+    modes = []
+    real_fdopen = os.fdopen
+
+    def spy(fd, *a, **kw):
+        modes.append(stat.S_IMODE(os.fstat(fd).st_mode))
+        return real_fdopen(fd, *a, **kw)
+
+    import unittest.mock
+
+    with unittest.mock.patch("os.fdopen", spy):
+        write_private(p, "secret")
+    assert p.read_text() == "secret" and stat.S_IMODE(os.stat(p).st_mode) == 0o600
+    assert all(m == 0o600 for m in modes)

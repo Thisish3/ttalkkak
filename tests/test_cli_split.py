@@ -45,3 +45,16 @@ def test_config_file_is_private(tmp_path):
     p = save_config(ClientConfig(endpoint="https://gw"), tmp_path)
     assert stat.S_IMODE(os.stat(p).st_mode) == 0o600
     assert load_config(tmp_path).endpoint == "https://gw"
+
+
+def test_ops_up_without_extra_points_to_install(monkeypatch):
+    import importlib.util
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a: None if name == "huggingface_hub" else real(name, *a),
+    )
+    r = runner.invoke(app, ["ops", "up", "--model", "m"])
+    assert r.exit_code == 2 and "ttalkkak[ops]" in r.output

@@ -79,13 +79,17 @@ def login(
     issuer = issuer or (old.issuer if old and old.endpoint == endpoint else None)
     http = _http()
     try:
+        from ttalkkak.auth.device import check_https
+
+        check_https(endpoint)
         if not issuer:
             r = http.get(f"{endpoint}/v1/auth-config")
             if r.status_code != 200:
                 raise TtalkkakError(
                     "게이트웨이에서 로그인 설정을 가져오지 못했습니다", 2
                 )
-            issuer, client_id = r.json()["issuer"], r.json().get("client_id", client_id)
+            conf = r.json()
+            issuer, client_id = conf["issuer"], conf.get("client_id", client_id)
         d = DeviceLogin(issuer, client_id, http)
         start = d.start()
         url = start.get("verification_uri_complete") or start["verification_uri"]
@@ -94,9 +98,9 @@ def login(
         _open_browser(url)
         tokens = d.poll(start)
         tenant = tenant_of(tokens.id_claims)
-    except (TtalkkakError, httpx.HTTPError) as err:
-        if isinstance(err, httpx.HTTPError):
-            err = TtalkkakError(f"로그인 서버에 연결하지 못했습니다: {err}")
+    except (TtalkkakError, httpx.HTTPError, ValueError, KeyError) as err:
+        if not isinstance(err, TtalkkakError):
+            err = TtalkkakError(f"로그인 서버와 통신하지 못했습니다: {err}")
         raise _fail(err) from err
     save_config(
         ClientConfig(
@@ -121,7 +125,7 @@ def logout() -> None:
     if t and cfg and cfg.issuer:
         try:
             DeviceLogin(cfg.issuer, cfg.client_id, _http()).revoke(t)
-        except (TtalkkakError, httpx.HTTPError):
+        except Exception:  # noqa: BLE001 - local logout must always succeed
             typer.echo("알림: 서버에서 토큰을 폐기하지 못했습니다", err=True)
     clear_tokens()
     typer.echo("로그아웃했습니다")

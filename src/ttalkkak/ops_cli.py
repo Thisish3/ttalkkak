@@ -19,6 +19,7 @@ def up(
     skills: str = typer.Option(""),
     resume: str | None = None,
 ) -> None:
+    _need_extra("huggingface_hub")
     Deps, run_up, deps_kw = _serving()
     deps = Deps(
         client=httpx.Client(),

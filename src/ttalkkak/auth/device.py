@@ -37,15 +37,28 @@ def _claims(id_token: str | None) -> dict:
         return {}
     payload = id_token.split(".")[1]
     try:
-        return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        claims = json.loads(
+            base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+        )
     except ValueError:
         return {}
+    return claims if isinstance(claims, dict) else {}
 
 
-def _check_issuer_url(issuer: str) -> None:
-    u = urlparse(issuer)
+def check_https(url: str) -> None:
+    u = urlparse(url)
     if u.scheme != "https" and not (u.scheme == "http" and u.hostname in LOCAL_HOSTS):
-        raise TtalkkakError(f"로그인 서버 주소는 https여야 합니다: {issuer}", 2)
+        raise TtalkkakError(f"주소는 https여야 합니다: {url}", 2)
+
+
+def _json(r: httpx.Response) -> dict:
+    try:
+        body = r.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise TtalkkakError(f"로그인 서버 응답을 읽지 못했습니다: HTTP {r.status_code}")
+    return body
 
 
 class DeviceLogin:
@@ -57,7 +70,7 @@ class DeviceLogin:
         sleep: Callable[[float], None] | None = None,
         now: Callable[[], float] | None = None,
     ):
-        _check_issuer_url(issuer)
+        check_https(issuer)
         self.issuer = issuer.rstrip("/")
         self.client_id = client_id
         self.http = http
@@ -68,8 +81,11 @@ class DeviceLogin:
     def discover(self) -> dict:
         if self._meta is None:
             r = self.http.get(f"{self.issuer}/.well-known/openid-configuration")
-            r.raise_for_status()
-            meta = r.json()
+            if r.status_code != 200:
+                raise TtalkkakError(
+                    f"로그인 서버 설정을 읽지 못했습니다: HTTP {r.status_code}"
+                )
+            meta = _json(r)
             if meta.get("issuer", "").rstrip("/") != self.issuer:
                 raise TtalkkakError(
                     f"로그인 서버의 issuer가 설정과 다릅니다: {meta.get('issuer')}", 2
@@ -86,10 +102,14 @@ class DeviceLogin:
             self.discover()["device_authorization_endpoint"],
             data={"client_id": self.client_id, "scope": SCOPE},
         )
-        r.raise_for_status()
-        return r.json()
+        body = _json(r)
+        if r.status_code != 200 or "device_code" not in body:
+            raise TtalkkakError(f"로그인을 시작하지 못했습니다: HTTP {r.status_code}")
+        return body
 
     def _tokens(self, body: dict, prev: Tokens | None = None) -> Tokens:
+        if not isinstance(body.get("access_token"), str):
+            raise TtalkkakError("로그인 서버가 접근 토큰을 주지 않았습니다")
         claims = _claims(body.get("id_token")) or (prev.id_claims if prev else {})
         return Tokens(
             access_token=body["access_token"],
@@ -115,9 +135,10 @@ class DeviceLogin:
                     "client_id": self.client_id,
                 },
             )
+            body = _json(r)
             if r.status_code == 200:
-                return self._tokens(r.json())
-            error = r.json().get("error") if r.content else None
+                return self._tokens(body)
+            error = body.get("error")
             if error == "authorization_pending":
                 continue
             if error == "slow_down":
@@ -127,7 +148,7 @@ class DeviceLogin:
                 raise TtalkkakError("브라우저에서 로그인을 거절했습니다")
             if error == "expired_token":
                 raise TtalkkakError("로그인 코드가 만료됐습니다. 다시 `ttalkkak login`")
-            raise TtalkkakError(f"로그인 실패: {error or r.status_code}")
+            raise TtalkkakError(f"로그인 실패: {error or 'HTTP'} {r.status_code}")
 
     def refresh(self, t: Tokens) -> Tokens:
         if not t.refresh_token:
@@ -142,7 +163,7 @@ class DeviceLogin:
         )
         if r.status_code != 200:
             raise TtalkkakError("로그인이 만료됐습니다: ttalkkak login")
-        return self._tokens(r.json(), t)
+        return self._tokens(_json(r), t)
 
     def revoke(self, t: Tokens) -> None:
         url = self.discover().get("revocation_endpoint")
@@ -188,7 +209,10 @@ def load_tokens(home: Path | None = None) -> Tokens | None:
     path = _home(home) / "credentials.json"
     if not path.is_file():
         return None
-    return Tokens(**json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return Tokens(**json.loads(path.read_text(encoding="utf-8")))
+    except (ValueError, TypeError):
+        return None
 
 
 def clear_tokens(home: Path | None = None) -> None:
