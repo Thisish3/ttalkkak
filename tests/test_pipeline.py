@@ -5,6 +5,7 @@ import httpx
 import pytest
 from mock_openai import mock_transport
 
+from ttalkkak.errors import TtalkkakError
 from ttalkkak.pipeline import Deps, run_up
 from ttalkkak.schemas import GpuInfo, Launched, ModelInfo, ProbeResult
 
@@ -287,3 +288,14 @@ def test_stage_files_are_written_atomically(tmp_path, monkeypatch):
     )
     run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()))
     assert any(str(p).endswith("state.json") for p in replaced)
+
+
+def test_local_model_without_gpu_stops_before_any_launch(tmp_path):
+    stopped, launched = [], []
+    d = deps(stopped)
+    d.probe = lambda m: ProbeResult(model=M, gpu=None)
+    real_launch = d.launch
+    d.launch = lambda *a, **kw: launched.append(a) or real_launch(*a, **kw)
+    with pytest.raises(TtalkkakError, match="GPU"):
+        run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d)
+    assert launched == []

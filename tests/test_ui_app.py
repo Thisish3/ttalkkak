@@ -13,7 +13,7 @@ FIX = Path(__file__).parent / "fixtures"
 GPU8 = GpuInfo(name="RTX 3060 Ti", memory_mib=8192, compute_capability="8.6")
 
 
-def make(tmp_path, list_models=None, run_fn=None):
+def make(tmp_path, list_models=None, run_fn=None, gpu=GPU8):
     shutil.copytree(FIX / "skills", tmp_path / "skills")
     (tmp_path / "runs").mkdir()
 
@@ -34,7 +34,7 @@ def make(tmp_path, list_models=None, run_fn=None):
         (d / "pick.json").write_text(Pick(chosen="c1").model_dump_json())
 
     deps = UiDeps(
-        list_models=list_models or models, detect_gpu=lambda: GPU8, run_fn=run_fn or run
+        list_models=list_models or models, detect_gpu=lambda: gpu, run_fn=run_fn or run
     )
     return TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
 
@@ -176,3 +176,11 @@ def test_handlers_do_not_block_the_event_loop(tmp_path):
     assert all(
         not inspect.iscoroutinefunction(f) for f in appmod.SYNC_HANDLERS.values()
     )
+
+
+def test_local_run_without_gpu_is_refused_but_nim_is_allowed(tmp_path):
+    # no GPU: a local model would pull a multi-GB engine image and then fail
+    c = make(tmp_path, gpu=None)
+    r = c.post("/api/runs", json={"model": "Qwen/Qwen2.5-0.5B-Instruct", "skills": []})
+    assert r.status_code == 400 and "GPU" in r.json()["error"]
+    assert c.post("/api/runs", json={"model": "nim:meta/llama", "skills": []}).status_code == 200

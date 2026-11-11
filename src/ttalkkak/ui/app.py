@@ -134,6 +134,8 @@ def create_app(
         model = str(body.get("model") or "").strip()
         if not model:
             return _err("model is required", 400)
+        if not model.startswith("nim:") and await run_in_threadpool(deps.detect_gpu) is None:
+            return _err("GPU를 찾지 못해 로컬 모델은 실행할 수 없습니다 (nim: 모델은 가능)", 400)
         try:
             run_id = runs.start(model, [str(s) for s in body.get("skills") or []])
         except Busy as busy:
