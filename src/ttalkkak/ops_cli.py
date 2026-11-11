@@ -105,7 +105,7 @@ def export(
 
 
 @ops.command()
-def ui(host: str = "127.0.0.1", port: int = 8787) -> None:
+def ui(host: str = "127.0.0.1", port: int = 8787, db: str | None = DB_OPT) -> None:
     """Open the local web UI (model search, run, report, export)."""
     _need_extra("uvicorn", "huggingface_hub", "starlette")
     import uvicorn
@@ -129,7 +129,16 @@ def ui(host: str = "127.0.0.1", port: int = 8787) -> None:
         )
         run_up(model, skills, ROOT / "runs", ROOT / "skills", deps, run_id=run_id)
 
-    deps = UiDeps(list_models=HfApi().list_models, detect_gpu=detect_gpu, run_fn=run_fn)
+    from ttalkkak.cluster.apply import gateway_logs, status
+
+    deps = UiDeps(
+        list_models=HfApi().list_models,
+        detect_gpu=detect_gpu,
+        run_fn=run_fn,
+        store=_store(db),
+        cluster_status=lambda: status("ttalkkak"),
+        gateway_logs=gateway_logs,
+    )
     typer.echo(f"ttalkkak ui: http://{host}:{port}")
     uvicorn.run(create_app(ROOT, deps), host=host, port=port, log_level="warning")
 

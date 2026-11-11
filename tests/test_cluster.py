@@ -98,3 +98,17 @@ def test_cli_down_requires_yes(tmp_path):
         app, ["ops", "cluster", "down", "--out", str(deploy_dir(tmp_path))]
     )
     assert r.exit_code == 2 and "--yes" in r.output
+
+
+def test_kubectl_errors_are_reduced_to_the_last_line():
+    noisy = (
+        "E1111 memcache.go:265 ...\n" * 5 + "The connection to the server was refused\n"
+    )
+
+    def k(args, input=None):
+        return subprocess.CompletedProcess(args, 1, "", noisy)
+
+    with pytest.raises(TtalkkakError) as e:
+        status("ttalkkak", kubectl=k)
+    assert str(e.value).endswith("The connection to the server was refused")
+    assert "memcache" not in str(e.value)

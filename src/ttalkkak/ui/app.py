@@ -15,6 +15,7 @@ from ttalkkak.errors import TtalkkakError
 from ttalkkak.export import write_export
 from ttalkkak.skills.loader import load_skill
 from ttalkkak.ui.models import search_models
+from ttalkkak.ui.ops_routes import ops_routes
 from ttalkkak.ui.runs import Busy, RunManager
 
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
@@ -25,6 +26,9 @@ class UiDeps:
     list_models: Callable
     detect_gpu: Callable
     run_fn: Callable[[str, list[str], str], None]
+    store: object | None = None
+    cluster_status: Callable[[], list[dict]] | None = None
+    gateway_logs: Callable[[], list[str]] | None = None
 
 
 def _err(msg: str, status: int) -> JSONResponse:
@@ -179,6 +183,7 @@ def create_app(
         Route("/api/runs", list_runs, methods=["GET"]),
         Route("/api/runs/{run_id}", status),
         Route("/api/runs/{run_id}/export", export, methods=["POST"]),
+        *ops_routes(root, deps, _body, _BadRequest),
     ], lifespan=lifespan)  # fmt: skip
     app.add_middleware(_LocalOnly, allowed=allowed_hosts)
     SYNC_HANDLERS.update(

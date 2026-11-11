@@ -21,6 +21,11 @@ def run_kubectl(
     )
 
 
+def _why(r: subprocess.CompletedProcess) -> str:
+    lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
+    return lines[-1].strip() if lines else f"exit {r.returncode}"
+
+
 def manifests(out: Path) -> list[Path]:
     return sorted(p for p in out.iterdir() if MANIFEST.match(p.name))
 
@@ -38,7 +43,7 @@ def apply_dir(out: Path, kubectl=run_kubectl, wait_s: int = 300) -> list[str]:
     for path in manifests(out):
         r = kubectl(["apply", "-f", str(path), "--server-side"])
         if r.returncode != 0:
-            raise TtalkkakError(f"{path.name} 적용 실패: {r.stderr.strip()}")
+            raise TtalkkakError(f"{path.name} 적용 실패: {_why(r)}")
         applied.append(path.name)
         for ns, name in _deployments(path):
             r = kubectl(
@@ -63,7 +68,7 @@ def apply_dir(out: Path, kubectl=run_kubectl, wait_s: int = 300) -> list[str]:
 def status(ns: str, kubectl=run_kubectl) -> list[dict]:
     r = kubectl(["get", "pods", "-n", ns, "-o", "json"])
     if r.returncode != 0:
-        raise TtalkkakError(f"상태를 읽지 못했습니다: {r.stderr.strip()}")
+        raise TtalkkakError(f"상태를 읽지 못했습니다: {_why(r)}")
     rows = []
     for p in json.loads(r.stdout).get("items", []):
         cs = p.get("status", {}).get("containerStatuses", [])
@@ -92,5 +97,5 @@ def gateway_logs(kubectl=run_kubectl) -> list[str]:
         ]
     )  # fmt: skip
     if r.returncode != 0:
-        raise TtalkkakError(f"게이트웨이 로그를 읽지 못했습니다: {r.stderr.strip()}")
+        raise TtalkkakError(f"게이트웨이 로그를 읽지 못했습니다: {_why(r)}")
     return r.stdout.splitlines()
