@@ -71,7 +71,4 @@ def energy_j(
     points = [(lo, _watts_at(samples, lo))]
     points += [(s.t, s.watts) for s in samples if lo < s.t < hi]
     points.append((hi, _watts_at(samples, hi)))
-    return sum(
-        (w0 + w1) / 2 * (b - a)
-        for (a, w0), (b, w1) in pairwise(points)
-    )
+    return sum((w0 + w1) / 2 * (b - a) for (a, w0), (b, w1) in pairwise(points))
