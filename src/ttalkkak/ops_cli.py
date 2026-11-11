@@ -353,3 +353,58 @@ def _export_gateway(run_dir, out, force, image, replicas, issuer, hostname, db):
         write_private(out / name, text)
         written.append(out / name)
     return written
+
+
+@ops.command()
+def bill(
+    logs: str = typer.Option(
+        ..., help="게이트웨이 접근 로그 파일 또는 *.jsonl 디렉터리"
+    ),
+    from_: str = typer.Option(..., "--from", help="YYYY-MM-DD (포함, UTC)"),
+    to: str = typer.Option(..., help="YYYY-MM-DD (제외, UTC)"),
+    cost: str = typer.Option(..., help="runs/<run>/cost.json"),
+    discounts: str | None = typer.Option(None, help="tenant: 할인율(0~1) YAML"),
+    out: str = ".",
+    prune_logs: bool = typer.Option(False, "--prune", help="보관 기간 지난 로그 삭제"),
+    retention_days: int = 120,
+) -> None:
+    """기간 사용량을 집계해 청구서 CSV와 CloudEvents를 만듭니다."""
+    import json
+    from datetime import UTC, datetime
+
+    import yaml
+
+    from ttalkkak.billing import bill as b
+    from ttalkkak.cost.model import Prices
+
+    try:
+        start, end = (
+            datetime.fromisoformat(d).replace(tzinfo=UTC) for d in (from_, to)
+        )
+        prices = Prices(**json.loads(Path(cost).read_text())["price_krw_per_mtok"])
+        disc = yaml.safe_load(Path(discounts).read_text()) if discounts else {}
+    except (ValueError, KeyError, OSError) as err:
+        typer.echo(f"오류: 입력을 읽지 못했습니다: {err}", err=True)
+        raise typer.Exit(2) from err
+    src = Path(logs)
+    files = sorted(src.glob("*.jsonl")) if src.is_dir() else [src]
+
+    def records(stats):
+        for f in files:
+            with f.open(encoding="utf-8") as fh:
+                yield from b.read_log(fh, stats)
+
+    stats: dict = {}
+    usage = b.aggregate(records(stats), start, end)
+    tag = f"{from_}_{to}"
+    inv = Path(out) / f"invoice-{tag}.csv"
+    b.write_invoice(b.invoice_rows(usage, prices, disc or {}), inv)
+    b.write_cloudevents(
+        records({}), start, end, Path(out) / f"usage-{tag}.cloudevents.jsonl"
+    )
+    typer.echo(
+        f"{inv} · 테넌트 {len({u.tenant for u in usage})} · 건너뛴 줄 {stats.get('skipped', 0)}"
+    )
+    if prune_logs and src.is_dir():
+        for p in b.prune(src, retention_days, datetime.now(UTC)):
+            typer.echo(f"삭제: {p}")
