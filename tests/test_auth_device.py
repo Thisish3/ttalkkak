@@ -168,9 +168,7 @@ def test_server_error_body_becomes_clean_error(tmp_path, monkeypatch):
     r = CliRunner().invoke(
         cli.app, ["login", "--endpoint", "https://gw.test", "--issuer", ISSUER]
     )
-    assert (
-        r.exit_code != 0 and r.exception is None or isinstance(r.exception, SystemExit)
-    )
+    assert r.exit_code == 1 and isinstance(r.exception, SystemExit)
     assert "502" in r.output
 
 
