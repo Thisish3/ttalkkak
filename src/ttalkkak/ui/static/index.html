@@ -416,7 +416,9 @@ $("u-load").onclick = async () => {
   } catch (e) { $("u-rows").innerHTML = `<tr><td colspan="7">오류: ${esc(e.message)}</td></tr>`; }
 };
 $("u-csv").onclick = () => { location.href = "/api/ops/invoice.csv?" + usageQuery(); };
-if (location.hash.slice(1) in { overview: 1, cost: 1, tenants: 1, usage: 1 }) showTab(location.hash.slice(1));
+const fromHash = () => showTab(location.hash.slice(1) in { overview: 1, cost: 1, tenants: 1, usage: 1 } ? location.hash.slice(1) : "run");
+window.addEventListener("hashchange", fromHash);
+if (location.hash) fromHash();
 </script>
 </body>
 </html>
