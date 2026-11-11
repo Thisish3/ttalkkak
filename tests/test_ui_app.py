@@ -183,4 +183,7 @@ def test_local_run_without_gpu_is_refused_but_nim_is_allowed(tmp_path):
     c = make(tmp_path, gpu=None)
     r = c.post("/api/runs", json={"model": "Qwen/Qwen2.5-0.5B-Instruct", "skills": []})
     assert r.status_code == 400 and "GPU" in r.json()["error"]
-    assert c.post("/api/runs", json={"model": "nim:meta/llama", "skills": []}).status_code == 200
+    assert (
+        c.post("/api/runs", json={"model": "nim:meta/llama", "skills": []}).status_code
+        == 200
+    )
