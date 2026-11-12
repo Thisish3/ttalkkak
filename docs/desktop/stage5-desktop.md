@@ -1,6 +1,8 @@
 # Stage 5 데스크탑 검증 지시 (Task 12, 13)
 
-**전제: hxccl B+C 작업이 끝난 뒤 시작한다.** hxccl이 진행 중이면 이 작업은 하지 말고 그대로 둔다.
+**전제(2026-11-12 갱신):** hxccl은 v0.2로 main에 merge됐다. 이 작업을 바로 시작한다.
+
+**먼저 읽을 것:** `docs/specs/2026-11-12-ttalkkak-product-definition.md`. ttalkkak의 정의가 바뀌었다. 이 검증은 그 문서의 "프로젝트 1: 뼈대 실증"이다. 기준은 하나다: **"된다"고 적는 것은 실제로 돌려 보고 출력이나 숫자를 남긴 것만.** 안 되는 것은 숨기지 말고 "안 됨"과 이유(측정한 만큼)를 적는다.
 
 ## 0. 준비
 
@@ -15,6 +17,12 @@ uv sync --all-extras && .venv/bin/python -m pytest -q tests   # 295 passed
 - `docs/specs/2026-11-11-ttalkkak-stage5-design.md` 10절
 
 맥에서 구현과 리뷰(중간 1회, 최종 1회)는 끝났다. 데스크탑에서 할 일은 실제 클러스터에서 확인하고, 실제와 다른 부분을 고치는 것이다.
+
+## 0.5 도구 준비
+
+- `kubectl`이 PATH에 없다. ttalkkak의 `ops cluster`와 `ops bill --from-cluster`는 `kubectl` 명령을 직접 부른다. k3s 내장 kubectl을 연결한다: `sudo ln -s /usr/local/bin/k3s /usr/local/bin/kubectl`. `~/.kube/config`는 이미 있다.
+- `helm`이 없다. 사전 설치(Envoy Gateway, AI Gateway) 전에 설치한다.
+- 둘 다 ledger에 R번호로 적는다.
 
 ## 1. 규칙
 
@@ -125,6 +133,23 @@ curl :8000/metrics | grep -E "^vllm:" | cut -d'{' -f1 | sort -u
 6. **관측**: Grafana 대시보드 3개에 실시간 값이 나오는지, 경보 규칙이 로드됐는지. Jaeger에 게이트웨이 → vLLM 구간이 보이는지.
 
 7. **운영 화면**: `ttalkkak ops ui` → 운영 탭 4개 스크린샷.
+
+## 3.5 맥북 원격 경로 (사용자 결정: 정식 Tailscale)
+
+시연은 맥북이 이용자 환경이고 데스크탑이 서비스다. 맥북에는 정식 Tailscale 앱을 설치한다(사용자가 설치). 데스크탑에서 다음을 준비하고 확인한다.
+
+1. **이름과 인증서**
+   - `tailscale status`로 이 기계의 MagicDNS 이름(`<기계>.<tailnet>.ts.net`)을 확인한다.
+   - `sudo tailscale cert <그 이름>`으로 인증서를 받는다. 실패하면 tailnet 관리 화면에서 HTTPS 인증서 기능이 꺼져 있는 것이다. 사용자에게 켜 달라고 요청하고 기다린다.
+   - 받은 인증서로 `ttalkkak-tls` Secret을 만든다(자체 서명 대신).
+   - `ttalkkak ops export --target gateway ... --hostname <그 이름>`으로 다시 만든다. 로그인 서버 주소(issuer)도 이 이름을 쓴다.
+2. **게이트웨이가 Tailscale 주소에서 열리는지**
+   - k3s의 LoadBalancer(klipper)가 443을 어느 주소에 여는지 확인한다: `kubectl get svc -A | grep -i envoy`, `ss -ltnp | grep :443`.
+   - 데스크탑 안에서 `curl -v https://<그 이름>/v1/pricing`이 인증서 경고 없이 되는지 본다.
+   - WSL2의 네트워크 방식 때문에 Tailscale 주소로 안 열리면, 무엇이 막는지 측정한 만큼 적고 대안(`tailscale serve`로 443을 넘기기 등)을 시험한다. 결과를 R번호로 적는다.
+3. **맥북에서 할 확인** (사용자와 맥 Claude가 한다. 데스크탑은 준비가 끝나면 주소를 보고한다)
+   - `ttalkkak login --endpoint https://<그 이름>` → 브라우저 로그인 → `ttalkkak` 대화
+   - 브라우저로 운영 콘솔 열기. `ops ui`는 지금 127.0.0.1에만 열린다. 원격에서 어떻게 열지(SSH 포워딩, 또는 게이트웨이 뒤에 두기)는 시험하고 결과를 적는다. 코드를 바꿔야 하면 맥에 보고하고 기다린다.
 
 ## 4. 끝나면
 
