@@ -21,8 +21,35 @@ TENANT_LIMIT_PCT = 95.0
 EMPTY = "Prometheus에서 값을 받지 못했습니다"
 
 
+class ShortCircuit:
+    """Wraps a Prom for one snapshot: after the first PromError, later queries
+    re-raise it without another request."""
+
+    def __init__(self, prom):
+        self.prom, self.error = prom, None
+
+    def _call(self, fn, *args):
+        if self.error is not None:
+            raise self.error
+        try:
+            return fn(*args)
+        except PromError as err:
+            self.error = err
+            raise
+
+    def instant(self, query):
+        return self._call(self.prom.instant, query)
+
+    def range(self, query, minutes, step_s):
+        return self._call(self.prom.range, query, minutes, step_s)
+
+
 def _sum(rows: list[tuple[dict, float]]) -> float | None:
     return sum(v for _, v in rows) if rows else None
+
+
+def _first(rows: list[tuple[dict, float]]) -> float | None:
+    return rows[0][1] if rows else None
 
 
 def _by_pod(rows: list[tuple[dict, float]]) -> dict[str, float]:
@@ -36,8 +63,8 @@ def _headline(prom: Prom, chip: ChipConfig, cost: CostConfig | None, errors: dic
     out["krw_per_hour"] = None
     try:
         out["concurrent"] = _sum(prom.instant(q.RUNNING))
-        ttft = _sum(prom.instant(q.TTFT_P99))
-        itl = _sum(prom.instant(q.ITL_P99))
+        ttft = _first(prom.instant(q.TTFT_P99))
+        itl = _first(prom.instant(q.ITL_P99))
         out["ttft_p99_ms"] = None if ttft is None else ttft * 1000
         out["itl_p99_ms"] = None if itl is None else itl * 1000
         out["output_tok_s"] = _sum(prom.instant(q.OUTPUT_TPS))
@@ -165,6 +192,8 @@ def build_snapshot(
     cost: CostConfig | None = None,
 ) -> dict:
     errors: dict[str, str] = {}
+    if not isinstance(prom, ShortCircuit):
+        prom = ShortCircuit(prom)
     try:
         tenants = tenant_usage(read_log(logs), limits, now)
     except Exception as err:  # noqa: BLE001 - one bad section must not fail the rest
@@ -183,7 +212,7 @@ def build_snapshot(
         "replicas": replicas,
         "recommendations": _recommend(replicas, tenants),
         "autoscale": {
-            "enabled": bool(autoscale.get("enabled")),
+            "enabled": autoscale.get("enabled"),
             "decisions": list(autoscale.get("decisions") or [])[-10:],
         },
         "errors": errors,

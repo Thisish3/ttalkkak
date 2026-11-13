@@ -162,16 +162,12 @@ def ui(
         )
         run_up(model, skills, ROOT / "runs", ROOT / "skills", deps, run_id=run_id)
 
-    from ttalkkak.chips import chip_from_ref
     from ttalkkak.cluster.apply import gateway_logs, run_kubectl, status
     from ttalkkak.cost.model import CostConfig
     from ttalkkak.live.prom import Prom
-    from ttalkkak.platform import Platform
     from ttalkkak.ui.app import allowed_hosts
 
-    chip_cfg = (
-        chip_from_ref(chip) if chip else Platform.from_gpu(detect_gpu(prefer=chip)).chip
-    )
+    chip_cfg = _ui_chip(chip, detect_gpu)
     deps = UiDeps(
         list_models=HfApi().list_models,
         detect_gpu=lambda: detect_gpu(prefer=chip),
@@ -192,6 +188,22 @@ def ui(
         port=port,
         log_level="warning",
     )
+
+
+def _ui_chip(chip: str | None, detect):
+    """Chip for the live view: --chip, else the detected GPU, else nvidia-gpu."""
+    from ttalkkak.chips import chip_by_name, chip_from_ref
+    from ttalkkak.platform import Platform
+
+    if chip:
+        return chip_from_ref(chip)
+    try:
+        gpu = detect()
+    except Exception:  # noqa: BLE001 - a laptop without a GPU must still start
+        gpu = None
+    if gpu is None:
+        return chip_by_name("nvidia-gpu")
+    return Platform.from_gpu(gpu).chip
 
 
 def _need_extra(*modules: str) -> None:

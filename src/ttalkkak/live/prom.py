@@ -30,21 +30,35 @@ class Prom:
 
     def _get(self, path: str, params: dict) -> list[dict]:
         try:
-            r = self.http.get(f"{self.base_url}{path}", params=params, timeout=10)
+            r = self.http.get(f"{self.base_url}{path}", params=params, timeout=3)
             r.raise_for_status()
             body = r.json()
         except (httpx.HTTPError, ValueError) as err:
             raise PromError(f"Prometheus에 연결하지 못했습니다: {err}") from err
-        if body.get("status") != "success":
-            raise PromError(f"Prometheus 오류: {body.get('error', body.get('status'))}")
-        return body["data"]["result"]
+        try:
+            if body.get("status") != "success":
+                msg = body.get("error", body.get("status"))
+                raise PromError(f"Prometheus 오류: {msg}")
+            result = body["data"]["result"]
+            if not isinstance(result, list):
+                raise TypeError("result is not a list")
+        except (KeyError, TypeError, AttributeError) as err:
+            raise PromError(
+                f"Prometheus 응답 형식이 올바르지 않습니다: {err!r}"
+            ) from err
+        return result
 
     def instant(self, q: str) -> list[tuple[dict, float]]:
         out = []
-        for row in self._get("/api/v1/query", {"query": q}):
-            v = float(row["value"][1])
-            if math.isfinite(v):
-                out.append((row["metric"], v))
+        try:
+            for row in self._get("/api/v1/query", {"query": q}):
+                v = float(row["value"][1])
+                if math.isfinite(v):
+                    out.append((dict(row["metric"]), v))
+        except (KeyError, TypeError, ValueError, IndexError) as err:
+            raise PromError(
+                f"Prometheus 응답 형식이 올바르지 않습니다: {err!r}"
+            ) from err
         return out
 
     def range(
@@ -58,11 +72,16 @@ class Prom:
             "step": step_s,
         }
         out = []
-        for row in self._get("/api/v1/query_range", params):
-            series = [
-                (datetime.fromtimestamp(float(t), UTC), float(v))
-                for t, v in row["values"]
-                if math.isfinite(float(v))
-            ]
-            out.append((row["metric"], series))
+        try:
+            for row in self._get("/api/v1/query_range", params):
+                series = [
+                    (datetime.fromtimestamp(float(t), UTC), float(v))
+                    for t, v in row["values"]
+                    if math.isfinite(float(v))
+                ]
+                out.append((dict(row["metric"]), series))
+        except (KeyError, TypeError, ValueError, IndexError, OverflowError) as err:
+            raise PromError(
+                f"Prometheus 응답 형식이 올바르지 않습니다: {err!r}"
+            ) from err
         return out

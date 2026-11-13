@@ -19,7 +19,7 @@ from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
 from ttalkkak.live.prom import PromError
-from ttalkkak.live.snapshot import build_snapshot
+from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
 
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 CONFIG_TTL_S = 10.0
@@ -138,13 +138,23 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         errors: dict[str, str] = {}
         try:
             pods = deps.cluster_status() if deps.cluster_status else []
-        except TtalkkakError as err:
-            pods, errors["replicas"] = [], str(err)
+        except Exception as err:  # noqa: BLE001 - never 500
+            pods, errors["replicas"] = [], f"파드 상태를 읽지 못했습니다: {err}"
+        prom = ShortCircuit(
+            deps.prometheus if deps.prometheus is not None else _NoProm()
+        )
+        model, running_pods = "", None
+        try:
+            rows = prom.instant(live_prom.RUNNING)
+            running_pods = {m["pod"] for m, _ in rows if m.get("pod")}
+            model = next((m["model_name"] for m, _ in rows if m.get("model_name")), "")
+        except PromError:
+            pass
         auto = configmap("ttalkkak-autoscale")
         deployment = (auto or {}).get("deployment") or ""
-        vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
-        autoscale = {"enabled": False, "max_replicas": None, "decisions": []}
-        if auto and str(auto.get("max_replicas", "")).isdigit():
+        autoscale = {"enabled": None, "max_replicas": None, "decisions": []}
+        if auto and deployment and str(auto.get("max_replicas", "")).isdigit():
+            vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
             autoscale.update(
                 enabled=auto.get("enabled") == "true",
                 max_replicas=int(auto["max_replicas"]),
@@ -154,10 +164,19 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             except ValueError:
                 pass
         else:
+            vllm_pods = (
+                [p for p in pods if p["name"] in running_pods]
+                if running_pods is not None
+                else []
+            )
             autoscale["max_replicas"] = len(vllm_pods)
             errors["autoscale"] = (
                 "ttalkkak-autoscale 설정을 읽지 못해 현재 복제본 수를 최대값으로 씁니다"
             )
+            if running_pods is None:
+                errors["autoscale"] += (
+                    ". Prometheus도 응답하지 않아 vLLM 파드를 찾지 못했습니다 (0개로 표시)"
+                )
         record = None
         cap = configmap("ttalkkak-capacity")
         try:
@@ -165,33 +184,24 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             record = CapacityRecord.model_validate(raw) if raw else None
         except ValueError:
             errors["capacity_record"] = "용량 기록을 읽지 못했습니다"
-        limits = (
-            {t.id: t.token_limit_per_min for t in deps.store.list_tenants()}
-            if deps.store is not None
-            else {}
-        )
+        limits = {}
+        if deps.store is not None:
+            try:
+                limits = {
+                    t.id: t.token_limit_per_min for t in deps.store.list_tenants()
+                }
+            except Exception as err:  # noqa: BLE001 - never 500
+                errors["tenants"] = f"고객 목록을 읽지 못했습니다: {err}"
         try:
             logs = deps.gateway_logs() if deps.gateway_logs else []
-        except TtalkkakError:
+        except Exception:  # noqa: BLE001 - never 500
             logs = []
-            errors["tenants"] = "게이트웨이 로그를 읽지 못했습니다"
+            errors.setdefault("tenants", "게이트웨이 로그를 읽지 못했습니다")
         chip = deps.chip
         if chip is None:
             from ttalkkak.chips import chip_by_name
 
             chip = chip_by_name("nvidia-gpu")
-        prom = deps.prometheus
-        model = ""
-        if prom is not None:
-            try:
-                model = next(
-                    (m["model_name"] for m, _ in prom.instant(live_prom.RUNNING)
-                     if m.get("model_name")), "",
-                )  # fmt: skip
-            except PromError:
-                pass
-        else:
-            prom = _NoProm()
         snap = build_snapshot(
             prom, vllm_pods, logs, limits, record, chip, model,
             datetime.now(UTC), autoscale, cost=deps.cost_config,

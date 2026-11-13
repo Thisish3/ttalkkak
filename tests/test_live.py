@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from subprocess import CompletedProcess
 
@@ -12,6 +13,7 @@ from ttalkkak.cost.model import CostConfig
 from ttalkkak.live import prom as P
 from ttalkkak.live.prom import Prom, PromError
 from ttalkkak.live.snapshot import build_snapshot
+from ttalkkak.ops_cli import _ui_chip
 from ttalkkak.tenants.store import TenantStore
 from ttalkkak.ui.app import UiDeps, allowed_hosts, create_app
 
@@ -105,7 +107,6 @@ def good_answers(kv=(0.2, 0.3)):
         P.ITL_P99: vec(({}, 0.02)),
         P.OUTPUT_TPS: vec(({}, 50)),
         f"sum({POWER})": vec(({}, 300)),
-        P.RUNNING: vec(*[({"pod": p, "model_name": "m"}, 2) for p in pods]),
     }
 
 
@@ -245,14 +246,15 @@ def kubectl_for(auto=True, cap="{}", calls=None):
     return run
 
 
-def live_client(tmp_path, prom, kubectl, calls=None):
-    deps = UiDeps(
+def live_client(tmp_path, prom, kubectl, calls=None, **over):
+    kw = dict(  # noqa: C408
         list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
         store=TenantStore(tmp_path / "t.db"),
         cluster_status=lambda: PODS,
         gateway_logs=lambda: [log("acme", 100)],
         prometheus=prom, kubectl=kubectl, chip=CHIP, cost_config=CostConfig(),
     )  # fmt: skip
+    deps = UiDeps(**{**kw, **over})
     return TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
 
 
@@ -313,3 +315,93 @@ def test_allow_host_adds_name(tmp_path):
         .status_code
         == 200
     )
+
+
+def garbage_prom(body):
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body))
+    )
+    return Prom("http://prom", http)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"status": "success"},
+        {"status": "success", "data": {"result": [{"metric": {}, "value": ["x"]}]}},
+        {"status": "success", "data": {"result": [{"value": [1, "2"]}]}},
+        {"status": "success", "data": {"result": "nope"}},
+        [],
+    ],
+)
+def test_garbage_prom_body_is_prom_error_and_route_200(tmp_path, body):
+    with pytest.raises(PromError):
+        garbage_prom(body).instant("x")
+    r = live_client(tmp_path, garbage_prom(body), kubectl_for()).get("/api/live")
+    assert r.status_code == 200 and "headline" in r.json()["errors"]
+
+
+def test_store_error_gives_200_with_tenants_error(tmp_path):
+    class Boom:
+        def list_tenants(self):
+            raise sqlite3.Error("locked")
+
+    c = live_client(tmp_path, prom_with(good_answers()), kubectl_for(), store=Boom())
+    r = c.get("/api/live")
+    assert r.status_code == 200 and "tenants" in r.json()["errors"]
+    assert r.json()["headline"]["concurrent"] == 4
+
+
+def test_cluster_status_oserror_gives_200_with_replicas_error(tmp_path):
+    def boom():
+        raise OSError("kubectl")
+
+    c = live_client(
+        tmp_path, prom_with(good_answers()), kubectl_for(), cluster_status=boom
+    )
+    r = c.get("/api/live")
+    assert r.status_code == 200 and "replicas" in r.json()["errors"]
+
+
+def test_fallback_counts_only_vllm_pods(tmp_path):
+    pods = [
+        *PODS,
+        {"name": "envoy-gw", "ready": "1/1", "restarts": 0, "phase": "Running"},
+    ]
+    c = live_client(
+        tmp_path, prom_with(good_answers()), kubectl_for(auto=False),
+        cluster_status=lambda: pods,
+    )  # fmt: skip
+    body = c.get("/api/live").json()
+    assert body["capacity"]["signals"]["max_replicas"] == 2
+    assert [r["pod"] for r in body["replicas"]] == ["vllm-a", "vllm-b"]
+    assert body["autoscale"]["enabled"] is None
+
+
+def test_fallback_without_prom_counts_no_pods(tmp_path):
+    c = live_client(tmp_path, down_prom(), kubectl_for(auto=False))
+    body = c.get("/api/live").json()
+    assert body["capacity"]["signals"]["max_replicas"] == 0
+    assert "Prometheus" in body["errors"]["autoscale"]
+
+
+def test_one_request_per_snapshot_when_prom_fails():
+    hits = []
+
+    def handler(req):
+        hits.append(req)
+        raise httpx.ConnectTimeout("hung")
+
+    p = Prom("http://prom", httpx.Client(transport=httpx.MockTransport(handler)))
+    s = snap(p)
+    assert len(hits) == 1
+    assert {"headline", "capacity", "replicas"} <= set(s["errors"])
+
+
+def test_ui_chip_falls_back_without_gpu():
+    assert _ui_chip(None, lambda: None).name == "nvidia-gpu"
+
+    def boom():
+        raise OSError("no nvidia-smi")
+
+    assert _ui_chip(None, boom).name == "nvidia-gpu"
