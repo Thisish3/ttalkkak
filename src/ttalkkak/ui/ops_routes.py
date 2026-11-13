@@ -2,7 +2,9 @@
 
 import csv
 import io
+import json
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,14 +14,26 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from ttalkkak.billing.bill import aggregate, invoice_rows, read_log
+from ttalkkak.capacity import CapacityRecord
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
+from ttalkkak.live import prom as live_prom
+from ttalkkak.live.prom import PromError
+from ttalkkak.live.snapshot import build_snapshot
 
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
+CONFIG_TTL_S = 10.0
 
 
 def _err(msg: str, status: int) -> JSONResponse:
     return JSONResponse({"error": msg}, status_code=status)
+
+
+class _NoProm:
+    def instant(self, q):
+        raise PromError("Prometheus 주소가 설정되지 않았습니다 (--prometheus-url)")
+
+    range = instant
 
 
 def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Route]:
@@ -100,6 +114,95 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             return JSONResponse({"pods": [], "error": str(err)})
         return JSONResponse({"pods": pods})
 
+    cache: dict[str, tuple[float, object]] = {}
+
+    def configmap(name: str) -> dict | None:
+        """data of a ConfigMap in the console namespace, cached 10 s; None if absent."""
+        hit = cache.get(name)
+        if hit and time.monotonic() - hit[0] < CONFIG_TTL_S:
+            return hit[1]
+        data = None
+        if deps.kubectl is not None:
+            try:
+                r = deps.kubectl(
+                    ["get", "configmap", name, "-n", deps.namespace, "-o", "json"]
+                )
+                if r.returncode == 0:
+                    data = json.loads(r.stdout).get("data") or {}
+            except (TtalkkakError, ValueError, OSError):
+                data = None
+        cache[name] = (time.monotonic(), data)
+        return data
+
+    def live_snapshot() -> dict:
+        errors: dict[str, str] = {}
+        try:
+            pods = deps.cluster_status() if deps.cluster_status else []
+        except TtalkkakError as err:
+            pods, errors["replicas"] = [], str(err)
+        auto = configmap("ttalkkak-autoscale")
+        deployment = (auto or {}).get("deployment") or ""
+        vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
+        autoscale = {"enabled": False, "max_replicas": None, "decisions": []}
+        if auto and str(auto.get("max_replicas", "")).isdigit():
+            autoscale.update(
+                enabled=auto.get("enabled") == "true",
+                max_replicas=int(auto["max_replicas"]),
+            )
+            try:
+                autoscale["decisions"] = json.loads(auto.get("decisions") or "[]")
+            except ValueError:
+                pass
+        else:
+            autoscale["max_replicas"] = len(vllm_pods)
+            errors["autoscale"] = (
+                "ttalkkak-autoscale 설정을 읽지 못해 현재 복제본 수를 최대값으로 씁니다"
+            )
+        record = None
+        cap = configmap("ttalkkak-capacity")
+        try:
+            raw = json.loads((cap or {}).get("capacity.json") or "{}")
+            record = CapacityRecord.model_validate(raw) if raw else None
+        except ValueError:
+            errors["capacity_record"] = "용량 기록을 읽지 못했습니다"
+        limits = (
+            {t.id: t.token_limit_per_min for t in deps.store.list_tenants()}
+            if deps.store is not None
+            else {}
+        )
+        try:
+            logs = deps.gateway_logs() if deps.gateway_logs else []
+        except TtalkkakError:
+            logs = []
+            errors["tenants"] = "게이트웨이 로그를 읽지 못했습니다"
+        chip = deps.chip
+        if chip is None:
+            from ttalkkak.chips import chip_by_name
+
+            chip = chip_by_name("nvidia-gpu")
+        prom = deps.prometheus
+        model = ""
+        if prom is not None:
+            try:
+                model = next(
+                    (m["model_name"] for m, _ in prom.instant(live_prom.RUNNING)
+                     if m.get("model_name")), "",
+                )  # fmt: skip
+            except PromError:
+                pass
+        else:
+            prom = _NoProm()
+        snap = build_snapshot(
+            prom, vllm_pods, logs, limits, record, chip, model,
+            datetime.now(UTC), autoscale, cost=deps.cost_config,
+        )  # fmt: skip
+        snap["errors"] = {**errors, **snap["errors"]}
+        return snap
+
+    @guarded
+    async def live(request):
+        return JSONResponse(await run_in_threadpool(live_snapshot))
+
     @guarded
     async def cost(request):
         c = cost_of(request.query_params.get("run"))
@@ -153,6 +256,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         return Response(buf.getvalue(), media_type="text/csv; charset=utf-8")
 
     return [
+        Route("/api/live", live),
         Route("/api/ops/status", status),
         Route("/api/ops/cost", cost),
         Route("/api/ops/tenants", tenants, methods=["GET", "POST"]),

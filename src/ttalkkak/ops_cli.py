@@ -122,12 +122,22 @@ def export(
         typer.echo(str(p))
 
 
+ALLOW_HOST_OPT = typer.Option(
+    [], "--allow-host", help="허용할 Host 이름 (여러 번 지정 가능, 예: Tailscale 이름)"
+)
+
+
 @ops.command()
 def ui(
     host: str = "127.0.0.1",
     port: int = 8787,
     db: str | None = DB_OPT,
     chip: str | None = CHIP_OPT,
+    prometheus_url: str = typer.Option(
+        "http://127.0.0.1:9090", help="실시간 화면이 읽을 Prometheus 주소"
+    ),
+    allow_host: list[str] = ALLOW_HOST_OPT,
+    namespace: str = typer.Option("ttalkkak", help="클러스터 네임스페이스"),
 ) -> None:
     """Open the local web UI (model search, run, report, export)."""
     _need_extra("uvicorn", "huggingface_hub", "starlette")
@@ -152,18 +162,36 @@ def ui(
         )
         run_up(model, skills, ROOT / "runs", ROOT / "skills", deps, run_id=run_id)
 
-    from ttalkkak.cluster.apply import gateway_logs, status
+    from ttalkkak.chips import chip_from_ref
+    from ttalkkak.cluster.apply import gateway_logs, run_kubectl, status
+    from ttalkkak.cost.model import CostConfig
+    from ttalkkak.live.prom import Prom
+    from ttalkkak.platform import Platform
+    from ttalkkak.ui.app import allowed_hosts
 
+    chip_cfg = (
+        chip_from_ref(chip) if chip else Platform.from_gpu(detect_gpu(prefer=chip)).chip
+    )
     deps = UiDeps(
         list_models=HfApi().list_models,
         detect_gpu=lambda: detect_gpu(prefer=chip),
         run_fn=run_fn,
         store=_store(db),
-        cluster_status=lambda: status("ttalkkak"),
+        cluster_status=lambda: status(namespace),
         gateway_logs=gateway_logs,
+        prometheus=Prom(prometheus_url, httpx.Client()),
+        kubectl=run_kubectl,
+        chip=chip_cfg,
+        cost_config=CostConfig(),
+        namespace=namespace,
     )
     typer.echo(f"ttalkkak ui: http://{host}:{port}")
-    uvicorn.run(create_app(ROOT, deps), host=host, port=port, log_level="warning")
+    uvicorn.run(
+        create_app(ROOT, deps, allowed_hosts(allow_host)),
+        host=host,
+        port=port,
+        log_level="warning",
+    )
 
 
 def _need_extra(*modules: str) -> None:

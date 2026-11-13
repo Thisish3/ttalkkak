@@ -1,5 +1,5 @@
 import contextlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -29,6 +29,15 @@ class UiDeps:
     store: object | None = None
     cluster_status: Callable[[], list[dict]] | None = None
     gateway_logs: Callable[[], list[str]] | None = None
+    prometheus: object | None = None
+    kubectl: Callable | None = None
+    chip: object | None = None
+    cost_config: object | None = None
+    namespace: str = "ttalkkak"
+
+
+def allowed_hosts(extra: Iterable[str] = ()) -> frozenset[str]:
+    return LOCAL_HOSTS | frozenset(h.strip().lower() for h in extra if h.strip())
 
 
 def _err(msg: str, status: int) -> JSONResponse:
