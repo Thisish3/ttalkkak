@@ -1,0 +1,28 @@
+name: nvidia-gpu
+vendor: NVIDIA
+detect:
+  command: ["nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader,nounits"]
+  parser: nvidia-smi-csv
+engines:
+  vllm:
+    image: "vllm/vllm-openai:v0.33.0"
+    api: openai
+  sglang:
+    image: "lmsysorg/sglang:v0.5.23"
+    api: openai
+docker:
+  flags: ["--gpus", "all"]
+kubernetes:
+  resource: "nvidia.com/gpu"
+telemetry:
+  power_watts: ["nvidia-smi", "--query-gpu=timestamp,power.draw,clocks.sm,temperature.gpu", "--format=csv", "-lms", "500"]
+  exporter_image: "nvcr.io/nvidia/k8s/dcgm-exporter:4.9.0"
+  metrics:
+    utilization: DCGM_FI_DEV_GPU_UTIL
+    power: DCGM_FI_DEV_POWER_USAGE
+    memory_used: DCGM_FI_DEV_FB_USED
+    temperature: DCGM_FI_DEV_GPU_TEMP
+export:
+  kserve: "ghcr.io/llm-d/llm-d-cuda:v0.9.0"
+  llmd.vllm: "gpu-vllm/release"
+  llmd.sglang: "gpu-sglang/release"

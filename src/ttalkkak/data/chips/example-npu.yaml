@@ -1,0 +1,25 @@
+name: example-npu
+vendor: "<회사 이름>"
+detect:
+  command: ["<칩 상태 명령>", "--json"]
+  name: "$.devices[0].name"
+  memory_mib: "$.devices[0].memory_mib"
+engines:
+  vllm:
+    image: "<레지스트리>/<엔진>:<버전>"
+    api: openai
+    port: 8000
+    args: ["--model", "{model}", "--max-model-len", "{max_len}"]
+    health: /health
+docker:
+  devices: ["/dev/<칩 장치>"]
+kubernetes:
+  resource: "<회사>.com/lpu"
+telemetry:
+  power_watts: ["<칩 상태 명령>", "--power"]
+  exporter_image: "<지표 수집기 이미지>"
+  metrics:
+    utilization: "<지표>"
+    power: "<지표>"
+    memory_used: "<지표>"
+    temperature: "<지표>"

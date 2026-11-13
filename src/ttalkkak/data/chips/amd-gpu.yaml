@@ -1,0 +1,32 @@
+name: amd-gpu
+vendor: AMD
+detect:
+  command: ["amd-smi", "static", "--asic", "--vram", "--json"]
+  parser: amd-smi-json
+engines:
+  vllm:
+    image: "vllm/vllm-openai-rocm:v0.33.0"
+    api: openai
+  sglang:
+    image: "lmsysorg/sglang:v0.5.23-rocm720-mi30x"
+    api: openai
+docker:
+  flags:
+    - "--device=/dev/kfd"
+    - "--device=/dev/dri"
+    - "--group-add"
+    - "video"
+    - "--group-add"
+    - "render"
+    - "--security-opt"
+    - "seccomp=unconfined"
+kubernetes:
+  resource: "amd.com/gpu"
+telemetry:
+  power_watts: null
+  exporter_image: null
+  metrics: {}
+export:
+  kserve: "ghcr.io/llm-d/llm-d-rocm:v0.9.0"
+  llmd.vllm: "amd-vllm/release"
+  llmd.sglang: "amd-sglang/rocm720-mi30x"
