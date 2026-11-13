@@ -5,15 +5,10 @@ from ttalkkak.export.common import (
     RunBundle,
     dump,
     engine_args,
+    export_value,
     gpu_key,
     resource_name,
 )
-
-_IMAGE = {
-    "nvidia": "ghcr.io/llm-d/llm-d-cuda:v0.9.0",
-    "amd": "ghcr.io/llm-d/llm-d-rocm:v0.9.0",
-}
-
 
 def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     c = b.candidate
@@ -32,7 +27,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
             "router": {"route": {}, "scheduler": {}},
             "template": {"containers": [{
                 "name": "main",
-                "image": image or _IMAGE[b.vendor],
+                "image": image or export_value(b, "kserve"),
                 "env": [
                     {"name": "HF_TOKEN", "valueFrom": {"secretKeyRef": {
                         "name": "hf-token", "key": "HF_TOKEN"}}},

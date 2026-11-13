@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from ttalkkak.chips import chip_by_name
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.export import dynamo, k8s, kserve, llmd
 from ttalkkak.export.common import load_run
@@ -45,13 +46,16 @@ def _readme(target: str, run_id: str, files: list[str]) -> str:
 
 
 def write_export(
-    run_dir: Path, target: str, out: Path, force: bool = False, image: str | None = None
+    run_dir: Path, target: str, out: Path, force: bool = False,
+    image: str | None = None, chip: str | None = None,
 ) -> list[Path]:
     if target not in TARGETS:
         raise TtalkkakError(
             f"unknown target {target!r}; choose from {sorted(TARGETS)}", 2
         )
     bundle = load_run(run_dir)
+    if chip:
+        bundle = bundle.model_copy(update={"vendor": chip_by_name(chip).name})
     files = TARGETS[target].render(bundle, image=image)
     files["README.md"] = _readme(target, bundle.run_id, sorted(files))
     paths = [out / name for name in files]

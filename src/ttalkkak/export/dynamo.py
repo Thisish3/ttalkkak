@@ -1,6 +1,6 @@
 from ttalkkak.engines import ADAPTERS
 from ttalkkak.errors import TtalkkakError
-from ttalkkak.export.common import RunBundle, dump, resource_name
+from ttalkkak.export.common import RunBundle, chip_of, dump, resource_name
 
 _LAUNCHER = ["python3", "-m", "sglang.launch_server"]
 _DROP_WITH_VALUE = {"--host", "--port"}
@@ -32,7 +32,7 @@ def _worker_args(args: list[str]) -> list[str]:
 
 def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     c = b.candidate
-    if b.vendor != "nvidia":
+    if chip_of(b.vendor).vendor.lower() != "nvidia":
         raise TtalkkakError("dynamo target supports NVIDIA runs only", 2)
     if not image:
         raise TtalkkakError(

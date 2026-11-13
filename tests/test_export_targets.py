@@ -177,3 +177,54 @@ def test_names_are_valid_dns_labels():
     import re
 
     assert re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", n) and len(n) <= 63
+
+
+def test_export_llmd_component_from_chip():
+    from ttalkkak.chips import chip_by_name
+
+    for b, chip in ((VN, "nvidia-gpu"), (VA, "amd-gpu")):
+        k = docs(llmd.render(b), "kustomization.yaml")[0]
+        want = chip_by_name(chip).export[f"llmd.{b.candidate.engine}"]
+        assert k["components"][0].endswith(f"/components/images/{want}?ref={llmd.REF}")
+
+
+def test_export_kserve_image_from_chip():
+    from ttalkkak.chips import chip_by_name
+
+    c = docs(kserve.render(VA), "llminferenceservice.yaml")[0]["spec"]["template"][
+        "containers"
+    ][0]
+    assert c["image"] == chip_by_name("amd-gpu").export["kserve"]
+
+
+def test_export_chip_without_export_entry_is_clear_error():
+    b = VN.model_copy(update={"vendor": "example-npu"})
+    with pytest.raises(TtalkkakError, match="example-npu"):
+        kserve.render(b)
+
+
+def test_gpu_key_accepts_chip_name():
+    from ttalkkak.export.common import gpu_key
+
+    assert gpu_key("amd-gpu") == "amd.com/gpu"
+    assert gpu_key("nvidia-gpu") == "nvidia.com/gpu"
+
+
+def test_dynamo_rejects_non_nvidia_chip():
+    with pytest.raises(TtalkkakError, match="NVIDIA"):
+        dynamo.render(VA, image="x")
+
+
+def test_applied_check_unsupported_engine():
+    from ttalkkak.schemas import AppliedConfig
+    from ttalkkak.verify.applied import check_applied
+
+    r = check_applied("trtllm", VN.candidate, AppliedConfig())
+    assert r == {
+        "status": "unsupported",
+        "reason": "이 엔진은 설정 적용 확인을 지원하지 않습니다",
+    }
+    assert check_applied("vllm", VN.candidate, AppliedConfig())["status"] in (
+        "ok",
+        "mismatch",
+    )

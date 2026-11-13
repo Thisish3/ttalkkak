@@ -5,6 +5,7 @@ import yaml
 from pydantic import BaseModel
 
 from ttalkkak.engines import ADAPTERS
+from ttalkkak.chips import chip_by_name, resolve_chip_name
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.schemas import Candidate, Pick, Plan, ProbeResult
 
@@ -34,7 +35,8 @@ def load_run(run_dir: Path) -> RunBundle:
     cand = next((c for c in plan.candidates if c.id == chosen.chosen), None)
     if cand is None:
         raise TtalkkakError(f"plan.json에 선택 후보 {chosen.chosen}가 없습니다", 2)
-    vendor = probe.gpu.vendor if probe.gpu else "nvidia"
+    g = probe.gpu
+    vendor = resolve_chip_name(g.vendor, g.chip) if g else "nvidia-gpu"
     return RunBundle(run_id=run_dir.name, candidate=cand, vendor=vendor)
 
 
@@ -62,8 +64,19 @@ def resource_name(b: "RunBundle") -> str:
     return name[:63].rstrip("-")
 
 
-def gpu_key(vendor: str) -> str:
-    return "amd.com/gpu" if vendor == "amd" else "nvidia.com/gpu"
+def chip_of(vendor_or_chip: str):
+    return chip_by_name(resolve_chip_name(vendor_or_chip))
+
+
+def gpu_key(vendor_or_chip: str) -> str:
+    return chip_of(vendor_or_chip).kubernetes.resource
+
+
+def export_value(b: "RunBundle", key: str) -> str:
+    chip = chip_of(b.vendor)
+    if key not in chip.export:
+        raise TtalkkakError(f"칩 설정 {chip.name}에 export.{key} 값이 없습니다", 2)
+    return chip.export[key]
 
 
 def dump(docs: list[dict]) -> str:

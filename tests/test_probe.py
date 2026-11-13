@@ -82,3 +82,78 @@ def test_no_gpu_tools_means_none():
         raise FileNotFoundError
 
     assert detect_gpu(run) is None
+
+
+def _example_chip():
+    from importlib.resources import files
+    from pathlib import Path
+
+    from ttalkkak.chips import load_chip
+
+    return load_chip(
+        Path(str(files("ttalkkak.data").joinpath("chips/example-npu.yaml")))
+    )
+
+
+def test_detect_json_chip():
+    import subprocess
+
+    from ttalkkak.probe.gpu import detect_gpu
+
+    out = '{"devices":[{"name":"NPU-1","memory_mib":32768}]}'
+
+    def run(cmd, **kw):
+        assert cmd[-1] == "--json"
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    chip = _example_chip()
+    g = detect_gpu(run, chips=[chip])
+    assert (g.name, g.memory_mib, g.chip) == ("NPU-1", 32768, "example-npu")
+    assert g.vendor == chip.vendor.lower()
+
+
+def test_detect_prefer_chip():
+    import pytest
+
+    from ttalkkak.errors import TtalkkakError
+    from ttalkkak.probe.gpu import detect_gpu
+
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd[0])
+        raise FileNotFoundError
+
+    assert detect_gpu(run, prefer="amd-gpu") is None
+    assert seen == ["amd-smi"]
+    with pytest.raises(TtalkkakError, match="칩 설정을 찾을 수 없습니다: nope"):
+        detect_gpu(run, prefer="nope")
+
+
+def test_detect_sets_chip_for_builtin():
+    import subprocess
+
+    from ttalkkak.probe.gpu import detect_gpu
+
+    amd = (FIX / "amd/amd_smi_static.json").read_text()
+
+    def run(cmd, **kw):
+        if cmd[0] == "nvidia-smi":
+            raise FileNotFoundError
+        return subprocess.CompletedProcess(cmd, 0, stdout=amd, stderr="")
+
+    g = detect_gpu(run)
+    assert g.chip == "amd-gpu" and g.vendor == "amd"
+    g2 = detect_gpu(
+        lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 0, stdout="RTX 3060 Ti, 8192, 8.6\n", stderr=""
+        )
+    )
+    assert g2.chip == "nvidia-gpu" and g2.vendor == "nvidia"
+
+
+def test_old_probe_vendor_maps_to_chip():
+    from ttalkkak.export.common import load_run
+
+    b = load_run(FIX / "runs/vllm-amd")
+    assert b.vendor == "amd-gpu"

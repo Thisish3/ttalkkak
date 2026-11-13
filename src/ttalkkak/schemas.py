@@ -12,7 +12,8 @@ class GpuInfo(BaseModel):
     name: str
     memory_mib: int
     compute_capability: str
-    vendor: Literal["nvidia", "amd"] = "nvidia"
+    vendor: str = "nvidia"
+    chip: str = "nvidia-gpu"
     arch: str = ""
 
 

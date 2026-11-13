@@ -87,3 +87,20 @@ def test_cli_export_exit_codes(tmp_path, monkeypatch):
         ],
     )
     assert r.exit_code == 2
+
+
+def test_write_export_chip_override_and_unknown(tmp_path):
+    written = write_export(RUNS / "vllm-nvidia", "kserve", tmp_path / "a", chip="amd-gpu")
+    text = (tmp_path / "a" / "llminferenceservice.yaml").read_text(encoding="utf-8")
+    assert "amd.com/gpu" in text and written
+    with pytest.raises(TtalkkakError, match="칩 설정을 찾을 수 없습니다: nope"):
+        write_export(RUNS / "vllm-nvidia", "kserve", tmp_path / "b", chip="nope")
+
+
+def test_ops_export_has_chip_option():
+    from typer.testing import CliRunner
+
+    from ttalkkak.cli import app
+
+    r = CliRunner().invoke(app, ["ops", "export", "--help"])
+    assert "--chip" in r.output

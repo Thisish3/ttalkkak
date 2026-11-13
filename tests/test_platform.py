@@ -26,3 +26,30 @@ def test_from_gpu_defaults_to_nvidia():
     g = GpuInfo(name="MI300X", memory_mib=196608, compute_capability="", vendor="amd")
     assert Platform.from_gpu(g).vendor == "amd"
     assert Platform.from_gpu(None).vendor == "nvidia"
+
+
+def test_platform_from_chip_flags():
+    from ttalkkak.chips import chip_by_name
+
+    amd = chip_by_name("amd-gpu")
+    assert Platform(amd).gpu_flags() == Platform(vendor="amd").gpu_flags()
+    assert Platform(amd).gpu_flags() == [
+        "--device=/dev/kfd", "--device=/dev/dri", "--group-add", "video",
+        "--group-add", "render", "--security-opt", "seccomp=unconfined",
+    ]  # fmt: skip
+
+
+def test_gpu_flags_append_devices():
+    from ttalkkak.chips import builtin_chips
+
+    npu = next(
+        c for c in builtin_chips() if c.name == "nvidia-gpu"
+    ).model_copy(deep=True)
+    npu.docker.devices = ["/dev/npu0"]
+    assert Platform(npu).gpu_flags() == ["--gpus", "all", "--device=/dev/npu0"]
+
+
+def test_from_gpu_uses_chip_field():
+    g = GpuInfo(name="X", memory_mib=1, compute_capability="", vendor="amd",
+                chip="amd-gpu")  # fmt: skip
+    assert Platform.from_gpu(g).chip.name == "amd-gpu"

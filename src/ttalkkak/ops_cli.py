@@ -9,6 +9,9 @@ ops = typer.Typer(no_args_is_help=True, help="운영자용 명령: 서빙 실행
 ROOT = Path.cwd()
 TK_HOME = Path.home() / ".ttalkkak"
 DB_OPT = typer.Option(None, "--db", help="기본 ~/.ttalkkak/tenants.db")
+CHIP_OPT = typer.Option(
+    None, "--chip", help="칩 설정 이름 (예: nvidia-gpu, amd-gpu). 기본은 자동 탐지"
+)
 
 
 def _names(skills: str) -> list[str]:
@@ -20,9 +23,10 @@ def up(
     model: str = typer.Option(...),
     skills: str = typer.Option(""),
     resume: str | None = None,
+    chip: str | None = CHIP_OPT,
 ) -> None:
     _need_extra("huggingface_hub")
-    Deps, run_up, deps_kw = _serving()
+    Deps, run_up, deps_kw = _serving(chip)
     deps = Deps(
         client=httpx.Client(),
         **deps_kw,
@@ -86,6 +90,7 @@ def export(
     issuer: str | None = typer.Option(None, help="gateway: external OIDC issuer"),
     hostname: str = typer.Option("ttalkkak.local", help="gateway: public hostname"),
     db: str | None = DB_OPT,
+    chip: str | None = CHIP_OPT,
 ) -> None:
     from ttalkkak.export import write_export
 
@@ -96,7 +101,9 @@ def export(
                 hostname, db,
             )  # fmt: skip
         else:
-            written = write_export(ROOT / "runs" / run, target, Path(out), force, image)
+            written = write_export(
+                ROOT / "runs" / run, target, Path(out), force, image, chip
+            )
     except TtalkkakError as err:
         typer.echo(f"오류: {err}", err=True)
         raise typer.Exit(err.exit_code) from err
@@ -105,7 +112,12 @@ def export(
 
 
 @ops.command()
-def ui(host: str = "127.0.0.1", port: int = 8787, db: str | None = DB_OPT) -> None:
+def ui(
+    host: str = "127.0.0.1",
+    port: int = 8787,
+    db: str | None = DB_OPT,
+    chip: str | None = CHIP_OPT,
+) -> None:
     """Open the local web UI (model search, run, report, export)."""
     _need_extra("uvicorn", "huggingface_hub", "starlette")
     import uvicorn
@@ -114,7 +126,7 @@ def ui(host: str = "127.0.0.1", port: int = 8787, db: str | None = DB_OPT) -> No
     from ttalkkak.probe.gpu import detect_gpu
     from ttalkkak.ui.app import UiDeps, create_app
 
-    Deps, run_up, deps_kw = _serving()
+    Deps, run_up, deps_kw = _serving(chip)
     if host != "127.0.0.1":
         typer.echo(
             f"경고: {host}에 엽니다. 이 화면은 컨테이너를 띄우고 코드를 실행할 수 있으니 "
@@ -133,7 +145,7 @@ def ui(host: str = "127.0.0.1", port: int = 8787, db: str | None = DB_OPT) -> No
 
     deps = UiDeps(
         list_models=HfApi().list_models,
-        detect_gpu=detect_gpu,
+        detect_gpu=lambda: detect_gpu(prefer=chip),
         run_fn=run_fn,
         store=_store(db),
         cluster_status=lambda: status("ttalkkak"),
@@ -154,15 +166,23 @@ def _need_extra(*modules: str) -> None:
         raise typer.Exit(2)
 
 
-def _serving():
+def _serving(chip: str | None = None):
     from ttalkkak.launch.docker import check_docker, launch, stop
     from ttalkkak.pipeline import Deps, run_up
     from ttalkkak.probe import probe
     from ttalkkak.verify.accuracy import run_accuracy
     from ttalkkak.verify.perf import run_perf
 
+    if chip:
+        from ttalkkak.chips import chip_by_name
+
+        try:
+            chip_by_name(chip)
+        except TtalkkakError as err:
+            typer.echo(f"오류: {err}", err=True)
+            raise typer.Exit(err.exit_code) from err
     kw = {
-        "probe": probe,
+        "probe": (lambda m: probe(m, prefer=chip)) if chip else probe,
         "check_docker": check_docker,
         "launch": lambda c, a, p: launch(c, a, platform=p),
         "stop": stop,

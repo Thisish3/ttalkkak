@@ -1,5 +1,5 @@
 from ttalkkak.engines import ADAPTERS
-from ttalkkak.export.common import RunBundle, dump, gpu_key, resource_name
+from ttalkkak.export.common import RunBundle, chip_of, dump, gpu_key, resource_name
 from ttalkkak.platform import Platform
 
 
@@ -22,7 +22,7 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
                 "spec": {
                     "containers": [{
                         "name": "server",
-                        "image": image or Platform(vendor=b.vendor).image(c.engine),
+                        "image": image or Platform(chip_of(b.vendor)).image(c.engine),
                         "args": adapter.build_args(c).args,
                         "ports": [{"containerPort": port, "name": "http"}],
                         "env": [{"name": "HF_TOKEN", "valueFrom": {"secretKeyRef": {

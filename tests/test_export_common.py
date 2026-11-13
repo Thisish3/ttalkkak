@@ -11,7 +11,7 @@ RUNS = Path(__file__).parent / "fixtures/runs"
 
 def test_load_run_returns_chosen_candidate_and_vendor():
     b = load_run(RUNS / "vllm-amd")
-    assert b.candidate.id == "c1" and b.vendor == "amd" and b.run_id == "vllm-amd"
+    assert b.candidate.id == "c1" and b.vendor == "amd-gpu" and b.run_id == "vllm-amd"
 
 
 def test_unfinished_run_is_an_error(tmp_path):
