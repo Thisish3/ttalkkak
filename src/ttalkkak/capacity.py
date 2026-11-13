@@ -83,6 +83,10 @@ def tenant_usage(
     hour_ago = now - timedelta(hours=1)
     tokens: dict[str, int] = {}
     throttled: dict[str, int] = {}
+    for tenant in limits:
+        if tenant and tenant != LOADTEST_TENANT:
+            tokens[tenant] = 0
+            throttled[tenant] = 0
     for r in records:
         tenant = r.get("tenant") or ""
         if not tenant or tenant == LOADTEST_TENANT:
@@ -102,7 +106,9 @@ def tenant_usage(
                 "tenant": tenant,
                 "tokens_last_min": tokens[tenant],
                 "limit_tpm": limit,
-                "pct": tokens[tenant] / limit * 100 if limit else None,
+                "pct": None
+                if limit is None
+                else (tokens[tenant] / limit * 100 if limit else 100.0),
                 "throttled_1h": throttled[tenant],
             }
         )
@@ -113,14 +119,17 @@ def idle_replicas(
     running_by_pod: dict[str, list[tuple[datetime, float]]],
     now: datetime,
     minutes: int = 5,
+    step_s: int = 30,
 ) -> list[str]:
-    """Pods whose series covers the whole window and never had a running request."""
+    """Pods with samples in the window, all zero, whose series covers its start."""
     start = now - timedelta(minutes=minutes)
+    old_enough = start + timedelta(seconds=step_s)
     idle = []
     for pod, series in running_by_pod.items():
-        if not series or min(t for t, _ in series) > start:
+        in_window = [v for t, v in series if start <= t <= now]
+        if not in_window or min(t for t, _ in series) > old_enough:
             continue
-        if all(v == 0 for t, v in series if t >= start):
+        if all(v == 0 for v in in_window):
             idle.append(pod)
     return sorted(idle)
 

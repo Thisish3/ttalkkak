@@ -148,3 +148,43 @@ def test_idle_replicas_five_minutes():
 def test_cache_hit_rate_zero_prompt():
     assert cache_hit_rate(0, 0) is None
     assert cache_hit_rate(200, 50) == 0.25
+
+
+def test_tenant_usage_includes_limit_only_tenants():
+    out = tenant_usage([], {"b": 100, "": 5, "ttalkkak-loadtest": 5}, NOW)
+    assert out == [
+        {
+            "tenant": "b",
+            "tokens_last_min": 0,
+            "limit_tpm": 100,
+            "pct": 0.0,
+            "throttled_1h": 0,
+        }
+    ]
+
+
+def test_tenant_usage_zero_limit_is_blocked():
+    out = tenant_usage([], {"b": 0}, NOW)
+    assert out[0]["pct"] == 100.0
+
+
+def test_idle_replicas_tolerates_one_step_after_start():
+    s = [
+        (NOW - timedelta(minutes=5) + timedelta(seconds=20 + 30 * i), 0.0)
+        for i in range(10)
+    ]
+    assert idle_replicas({"p": s}, NOW) == ["p"]
+
+
+def test_idle_replicas_vanished_pod_not_idle():
+    s = [(NOW - timedelta(minutes=10), 0.0), (NOW - timedelta(minutes=8), 0.0)]
+    assert idle_replicas({"gone": s}, NOW) == []
+
+
+def test_utilization_not_capped():
+    assert utilization(43000, rec(), 1, "m")["pct"] == pytest.approx(200.0)
+
+
+def test_period_summary_first_value_over_edge_counts_once():
+    s = [(NOW + timedelta(minutes=i), v) for i, v in enumerate([95, 99, 50])]
+    assert period_summary(s)["over_edge"] == 1
