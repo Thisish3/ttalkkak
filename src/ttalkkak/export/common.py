@@ -4,8 +4,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from ttalkkak.engines import ADAPTERS
 from ttalkkak.chips import chip_by_name, resolve_chip_name
+from ttalkkak.engines import ADAPTERS
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.schemas import Candidate, Pick, Plan, ProbeResult
 

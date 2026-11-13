@@ -11,6 +11,8 @@ from ttalkkak.platform import Platform
 
 REF = "v1.0.0"
 _REPO = "https://github.com/llm-d/llm-d//guides/recipes/modelserver"
+
+
 def _equals_form(args: list[str]) -> list[str]:
     """--flag value pairs to --flag=value, as the llm-d guides write them."""
     out, i = [], 0
@@ -33,14 +35,13 @@ def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     else:
         command = ["python3", "-m", "sglang.launch_server"]
         args = [f"--model-path={c.model_id}", "--host=0.0.0.0", "--port=8000", *flags]
+    component = export_value(b, "llmd." + c.engine)
     kustomization = {
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
         "resources": [f"{_REPO}/base/single-host/default?ref={REF}"],
         "namePrefix": f"{resource_name(b)}-",
-        "components": [
-            f"{_REPO}/components/images/{export_value(b, "llmd." + c.engine)}?ref={REF}"
-        ],
+        "components": [f"{_REPO}/components/images/{component}?ref={REF}"],
         "labels": [{"pairs": {"ttalkkak.run": b.run_id}, "includeSelectors": False}],
         "patches": [{"path": "patch.yaml"}],
     }

@@ -10,6 +10,7 @@ from ttalkkak.export.common import (
     resource_name,
 )
 
+
 def render(b: RunBundle, image: str | None = None) -> dict[str, str]:
     c = b.candidate
     if c.engine != "vllm":

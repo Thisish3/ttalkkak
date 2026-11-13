@@ -46,7 +46,9 @@ def test_example_npu_validates():
 def test_missing_field_error_names_path(tmp_path):
     f = tmp_path / "x.yaml"
     f.write_text(
-        files("ttalkkak.data").joinpath("chips/amd-gpu.yaml").read_text()
+        files("ttalkkak.data")
+        .joinpath("chips/amd-gpu.yaml")
+        .read_text()
         .replace("engines:", "engines_x:")
     )
     with pytest.raises(TtalkkakError) as e:
@@ -57,7 +59,9 @@ def test_missing_field_error_names_path(tmp_path):
 def test_bad_metric_key_rejected(tmp_path):
     f = tmp_path / "x.yaml"
     f.write_text(
-        files("ttalkkak.data").joinpath("chips/amd-gpu.yaml").read_text()
+        files("ttalkkak.data")
+        .joinpath("chips/amd-gpu.yaml")
+        .read_text()
         .replace("metrics: {}", "metrics: {fan: F}")
     )
     with pytest.raises(TtalkkakError) as e:
@@ -78,8 +82,10 @@ def test_unknown_chip_name():
 
 
 def _amd_text() -> str:
-    return files("ttalkkak.data").joinpath("chips/amd-gpu.yaml").read_text(
-        encoding="utf-8"
+    return (
+        files("ttalkkak.data")
+        .joinpath("chips/amd-gpu.yaml")
+        .read_text(encoding="utf-8")
     )
 
 

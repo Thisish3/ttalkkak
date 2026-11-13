@@ -88,6 +88,7 @@ class CandidateVerdict(BaseModel):
     candidate_id: str
     applied: AppliedConfig = Field(default_factory=AppliedConfig)
     mismatches: list[str] = Field(default_factory=list)
+    applied_check: dict = Field(default_factory=dict)
     accuracy: float | None = None
     accuracy_passed: bool | None = None
     agent: list[CheckResult] = Field(default_factory=list)

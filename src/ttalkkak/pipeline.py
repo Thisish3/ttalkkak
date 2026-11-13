@@ -27,7 +27,7 @@ from ttalkkak.schemas import (
 from ttalkkak.skills.loader import load_skills
 from ttalkkak.skills.requirements import merge_requirements
 from ttalkkak.verify.agent import run_agent_checks
-from ttalkkak.verify.applied import compare_applied
+from ttalkkak.verify.applied import check_applied
 
 NIM_URL = "https://integrate.api.nvidia.com/v1"
 
@@ -132,10 +132,12 @@ def run_up(
                 if c.baseline_only:
                     continue
                 applied = ADAPTERS[c.engine].read_applied(item.logs, item.collected)
+                checked = check_applied(c.engine, c, applied)
                 v = CandidateVerdict(
                     candidate_id=c.id,
                     applied=applied,
-                    mismatches=compare_applied(c, applied),
+                    mismatches=checked.get("mismatches", []),
+                    applied_check=checked,
                     accuracy=acc,
                 )
                 v.agent = run_agent_checks(deps.client, url, c.model_id, req)

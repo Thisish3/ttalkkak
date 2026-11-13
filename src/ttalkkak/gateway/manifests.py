@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
+from ttalkkak.chips import chip_from_ref
 from ttalkkak.cost.model import CostResult
 from ttalkkak.export.common import dump, load_run, resource_name
 from ttalkkak.export.k8s import render as render_k8s
@@ -45,6 +46,7 @@ class GatewayOptions(BaseModel):
     hostname: str = "ttalkkak.local"
     image: str | None = None
     dex_users: list[dict] = []
+    chip: str | None = None
 
 
 def _meta(name: str, ns: str, **labels) -> dict:
@@ -210,6 +212,8 @@ def _dex(opt: GatewayOptions) -> list[dict]:
 
 def _vllm(run_dir: Path, opt: GatewayOptions) -> tuple[list[dict], str, dict]:
     b = load_run(run_dir)
+    if opt.chip:
+        b = b.model_copy(update={"vendor": chip_from_ref(opt.chip).name})
     files = render_k8s(b, opt.image)
     (dep,) = yaml.safe_load_all(files["deployment.yaml"])
     (svc,) = yaml.safe_load_all(files["service.yaml"])

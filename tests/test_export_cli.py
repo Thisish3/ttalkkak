@@ -90,7 +90,9 @@ def test_cli_export_exit_codes(tmp_path, monkeypatch):
 
 
 def test_write_export_chip_override_and_unknown(tmp_path):
-    written = write_export(RUNS / "vllm-nvidia", "kserve", tmp_path / "a", chip="amd-gpu")
+    written = write_export(
+        RUNS / "vllm-nvidia", "kserve", tmp_path / "a", chip="amd-gpu"
+    )
     text = (tmp_path / "a" / "llminferenceservice.yaml").read_text(encoding="utf-8")
     assert "amd.com/gpu" in text and written
     with pytest.raises(TtalkkakError, match="칩 설정을 찾을 수 없습니다: nope"):
@@ -104,3 +106,20 @@ def test_ops_export_has_chip_option():
 
     r = CliRunner().invoke(app, ["ops", "export", "--help"])
     assert "--chip" in r.output
+
+
+def test_gateway_export_passes_chip(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(run_dir, out, force, image, replicas, issuer, hostname, db, chip=None):
+        seen["chip"] = chip
+        return []
+
+    monkeypatch.setattr(ops_cli, "_export_gateway", fake)
+    monkeypatch.setattr(ops_cli, "ROOT", RUNS.parent.parent)
+    r = CliRunner().invoke(
+        cli.app,
+        ["ops", "export", "--run", "x", "--target", "gateway", "--out",
+         str(tmp_path), "--chip", "amd-gpu"],
+    )  # fmt: skip
+    assert r.exit_code == 0 and seen["chip"] == "amd-gpu"

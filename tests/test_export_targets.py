@@ -197,10 +197,85 @@ def test_export_kserve_image_from_chip():
     assert c["image"] == chip_by_name("amd-gpu").export["kserve"]
 
 
-def test_export_chip_without_export_entry_is_clear_error():
-    b = VN.model_copy(update={"vendor": "example-npu"})
-    with pytest.raises(TtalkkakError, match="example-npu"):
+def test_export_chip_without_export_entry_is_clear_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("TTALKKAK_CHIPS_DIR", str(tmp_path))
+    bare = _CUSTOM.split("export:")[0] + "export: {}\n"
+    (tmp_path / "bare.yaml").write_text(bare, encoding="utf-8")
+    b = VN.model_copy(update={"vendor": "acme-npu"})
+    with pytest.raises(TtalkkakError, match="export.kserve 값이 없습니다"):
         kserve.render(b)
+
+
+_CUSTOM = """name: acme-npu
+vendor: Acme
+detect:
+  command: ["acme-smi", "--json"]
+  name: "$.devices[0].name"
+  memory_mib: "$.devices[0].memory_mib"
+engines:
+  vllm:
+    image: "acme/vllm:1"
+    api: openai
+docker:
+  devices: ["/dev/acme0"]
+kubernetes:
+  resource: "acme.com/npu"
+telemetry: {}
+export:
+  kserve: "acme/kserve:1"
+"""
+
+
+def test_custom_chip_dir_detect_platform_export(tmp_path, monkeypatch):
+    import subprocess
+
+    from ttalkkak.chips import available_chips, builtin_chips
+    from ttalkkak.platform import Platform
+    from ttalkkak.probe.gpu import detect_gpu
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TTALKKAK_CHIPS_DIR", str(tmp_path))
+    (tmp_path / "acme.yaml").write_text(_CUSTOM, encoding="utf-8")
+    out = '{"devices":[{"name":"A1","memory_mib":4096}]}'
+
+    def run(cmd, **kw):
+        if cmd[0] != "acme-smi":
+            raise FileNotFoundError
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    g = detect_gpu(run)
+    assert (g.chip, g.name) == ("acme-npu", "A1")
+    p = Platform.from_gpu(g)
+    assert p.image("vllm") == "acme/vllm:1"
+    assert p.gpu_flags() == ["--device=/dev/acme0"]
+    b = VN.model_copy(update={"vendor": g.chip})
+    c = docs(kserve.render(b), "llminferenceservice.yaml")[0]["spec"]["template"][
+        "containers"
+    ][0]
+    assert c["image"] == "acme/kserve:1"
+    assert c["resources"]["limits"] == {"acme.com/npu": "1"}
+    assert "example-npu" not in [c.name for c in available_chips()]
+    assert len(builtin_chips()) == 2
+
+
+def test_chip_ref_accepts_yaml_path(tmp_path, monkeypatch):
+    from ttalkkak.chips import chip_by_name, chip_from_ref
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    f = tmp_path / "x.yaml"
+    f.write_text(_CUSTOM.replace("acme-npu", "path-npu"), encoding="utf-8")
+    assert chip_from_ref(str(f)).name == "path-npu"
+    assert chip_by_name("path-npu").vendor == "Acme"
+
+
+def test_gateway_export_honors_chip(tmp_path):
+    from ttalkkak.gateway.manifests import GatewayOptions, _vllm
+
+    objs, _, _ = _vllm(RUNS / "vllm-nvidia", GatewayOptions(chip="amd-gpu"))
+    dep = objs[0]
+    limits = dep["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]
+    assert "amd.com/gpu" in limits
 
 
 def test_gpu_key_accepts_chip_name():

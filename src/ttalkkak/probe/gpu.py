@@ -1,8 +1,7 @@
 import json
 import subprocess
 
-from ttalkkak.chips import ChipConfig, builtin_chips, json_path
-from ttalkkak.errors import TtalkkakError
+from ttalkkak.chips import ChipConfig, available_chips, chip_from_ref, json_path
 from ttalkkak.schemas import GpuInfo
 
 _MIB = {"MB": 1, "MiB": 1, "GB": 1024, "GiB": 1024}
@@ -49,11 +48,9 @@ def detect_gpu(
     chips: list[ChipConfig] | None = None,
     prefer: str | None = None,
 ) -> GpuInfo | None:
-    chips = builtin_chips() if chips is None else chips
+    chips = available_chips() if chips is None else chips
     if prefer is not None:
-        chips = [c for c in chips if c.name == prefer]
-        if not chips:
-            raise TtalkkakError(f"칩 설정을 찾을 수 없습니다: {prefer}", 2)
+        chips = [c for c in chips if c.name == prefer] or [chip_from_ref(prefer)]
     for chip in chips:
         try:
             out = run(

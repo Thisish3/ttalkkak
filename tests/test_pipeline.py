@@ -299,3 +299,20 @@ def test_local_model_without_gpu_stops_before_any_launch(tmp_path):
     with pytest.raises(TtalkkakError, match="GPU"):
         run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d)
     assert launched == []
+
+
+def test_verdict_records_applied_check(tmp_path):
+    from ttalkkak.schemas import Verification
+    from ttalkkak.verify.applied import check_applied
+
+    gpu = Gpu()
+    d = gpu_deps(gpu)
+    run_dir, _ = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, d)
+    ver = Verification.model_validate_json(
+        (run_dir / "verify.json").read_text(encoding="utf-8")
+    )
+    assert ver.verdicts
+    assert all(
+        v.applied_check.get("status") in ("ok", "mismatch") for v in ver.verdicts
+    )
+    assert check_applied("trtllm", None, None)["status"] == "unsupported"

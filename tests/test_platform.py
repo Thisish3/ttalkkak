@@ -42,9 +42,9 @@ def test_platform_from_chip_flags():
 def test_gpu_flags_append_devices():
     from ttalkkak.chips import builtin_chips
 
-    npu = next(
-        c for c in builtin_chips() if c.name == "nvidia-gpu"
-    ).model_copy(deep=True)
+    npu = next(c for c in builtin_chips() if c.name == "nvidia-gpu").model_copy(
+        deep=True
+    )
     npu.docker.devices = ["/dev/npu0"]
     assert Platform(npu).gpu_flags() == ["--gpus", "all", "--device=/dev/npu0"]
 

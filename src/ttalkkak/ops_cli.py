@@ -10,7 +10,9 @@ ROOT = Path.cwd()
 TK_HOME = Path.home() / ".ttalkkak"
 DB_OPT = typer.Option(None, "--db", help="기본 ~/.ttalkkak/tenants.db")
 CHIP_OPT = typer.Option(
-    None, "--chip", help="칩 설정 이름 (예: nvidia-gpu, amd-gpu). 기본은 자동 탐지"
+    None,
+    "--chip",
+    help="칩 이름 또는 칩 설정 yaml 경로 (예: nvidia-gpu). 기본은 자동 탐지",
 )
 
 
@@ -98,7 +100,7 @@ def export(
         if target == "gateway":
             written = _export_gateway(
                 ROOT / "runs" / run, Path(out), force, image, replicas, issuer,
-                hostname, db,
+                hostname, db, chip,
             )  # fmt: skip
         else:
             written = write_export(
@@ -174,10 +176,10 @@ def _serving(chip: str | None = None):
     from ttalkkak.verify.perf import run_perf
 
     if chip:
-        from ttalkkak.chips import chip_by_name
+        from ttalkkak.chips import chip_from_ref
 
         try:
-            chip_by_name(chip)
+            chip_from_ref(chip)
         except TtalkkakError as err:
             typer.echo(f"오류: {err}", err=True)
             raise typer.Exit(err.exit_code) from err
@@ -353,7 +355,9 @@ def tenants_user_remove(email: str, db: str | None = DB_OPT):
     typer.echo(f"{email}을 지웠습니다")
 
 
-def _export_gateway(run_dir, out, force, image, replicas, issuer, hostname, db):
+def _export_gateway(
+    run_dir, out, force, image, replicas, issuer, hostname, db, chip=None
+):
     from ttalkkak.cost.model import CostResult
     from ttalkkak.gateway.manifests import GatewayOptions, render_stack
 
@@ -369,6 +373,7 @@ def _export_gateway(run_dir, out, force, image, replicas, issuer, hostname, db):
         hostname=hostname,
         image=image,
         dex_users=_load_dex_users(),
+        chip=chip,
     )
     files = render_stack(run_dir, _store(db), cost, opt)
     existing = [out / n for n in files if (out / n).exists()]
