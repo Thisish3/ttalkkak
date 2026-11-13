@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ttalkkak.errors import TtalkkakError
 from ttalkkak.gateway.manifests import GatewayOptions, render_stack
 from ttalkkak.tenants.store import TenantStore
 
@@ -49,7 +50,9 @@ def test_files_and_order(store):
 
 
 def test_vllm_replicas_usage_flag_and_scrape(store):
-    (dep,) = kind(docs(store, replicas=2)[1], "20-vllm.yaml", "Deployment")
+    (dep,) = kind(
+        docs(store, replicas=2, max_replicas=2)[1], "20-vllm.yaml", "Deployment"
+    )
     assert dep["spec"]["replicas"] == 2
     assert (
         "--enable-prompt-tokens-details"
@@ -223,3 +226,60 @@ def test_dex_users_live_in_a_secret_and_ops_serve_is_fenced(store):
     (np,) = [x for x in d["25-ops-serve.yaml"] if x["kind"] == "NetworkPolicy"]
     allowed = json.dumps(np["spec"]["ingress"])
     assert "envoy-gateway-system" in allowed and "prometheus" in allowed
+
+
+def vllm_container(d):
+    (dep,) = kind(d, "20-vllm.yaml", "Deployment")
+    return dep, dep["spec"]["template"]["spec"]["containers"][0]
+
+
+def arg_after(c, flag):
+    return c["args"][c["args"].index(flag) + 1]
+
+
+def test_memory_fraction_fixed_by_max_when_autoscale(store):
+    _, d = docs(store, max_replicas=3)
+    _, c = vllm_container(d)
+    assert arg_after(c, "--gpu-memory-utilization") == "0.28"
+
+
+def test_memory_fraction_by_replicas_without_autoscale(store):
+    _, d = docs(store, replicas=2, max_replicas=3, autoscale=False)
+    _, c = vllm_container(d)
+    assert arg_after(c, "--gpu-memory-utilization") == "0.42"
+
+
+def test_replicas_cannot_exceed_max(store):
+    with pytest.raises(TtalkkakError):
+        docs(store, replicas=3, max_replicas=2)
+
+
+def test_runtime_share_drops_gpu_request(store):
+    _, d = docs(store, gpu_share="runtime")
+    dep, c = vllm_container(d)
+    assert "nvidia.com/gpu" not in str(c.get("resources", {}))
+    assert dep["spec"]["template"]["spec"]["runtimeClassName"] == "nvidia"
+    assert {"name": "NVIDIA_VISIBLE_DEVICES", "value": "all"} in c["env"]
+
+
+def test_resource_share_keeps_gpu_request(store):
+    _, d = docs(store)
+    _, c = vllm_container(d)
+    assert c["resources"]["limits"] == {"nvidia.com/gpu": "1"}
+
+
+def test_runtime_share_rejects_non_nvidia_chip(store):
+    with pytest.raises(TtalkkakError, match="runtime 공유"):
+        docs(store, gpu_share="runtime", chip="amd-gpu")
+
+
+def test_autoscale_configmaps_rendered(store):
+    _, d = docs(store, max_replicas=3, autoscale=False)
+    cms = {x["metadata"]["name"]: x for x in kind(d, "20-vllm.yaml", "ConfigMap")}
+    dep, _ = vllm_container(d)
+    assert cms["ttalkkak-autoscale"]["data"] == {
+        "enabled": "false",
+        "max_replicas": "3",
+        "deployment": dep["metadata"]["name"],
+    }
+    assert cms["ttalkkak-capacity"]["data"] == {"capacity.json": "{}"}

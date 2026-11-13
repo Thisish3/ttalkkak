@@ -1,12 +1,15 @@
 import json
+import math
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel
 
 from ttalkkak.chips import chip_by_name, chip_from_ref
 from ttalkkak.cost.model import CostResult
-from ttalkkak.export.common import dump, load_run, resource_name
+from ttalkkak.errors import TtalkkakError
+from ttalkkak.export.common import dump, gpu_key, load_run, resource_name
 from ttalkkak.export.k8s import render as render_k8s
 from ttalkkak.gateway import versions as v
 from ttalkkak.tenants.store import TenantStore
@@ -47,6 +50,18 @@ class GatewayOptions(BaseModel):
     image: str | None = None
     dex_users: list[dict] = []
     chip: str | None = None
+    max_replicas: int = 1
+    autoscale: bool = True
+    gpu_share: Literal["resource", "runtime"] = "resource"
+
+
+GPU_MEMORY_BUDGET = 0.85
+NVIDIA_RESOURCE = "nvidia.com/gpu"
+
+
+def memory_fraction(opt: GatewayOptions) -> float:
+    n = opt.max_replicas if opt.autoscale else opt.replicas
+    return math.floor(GPU_MEMORY_BUDGET / max(n, 1) * 100) / 100
 
 
 def _meta(name: str, ns: str, **labels) -> dict:
@@ -227,10 +242,46 @@ def _vllm(run_dir: Path, opt: GatewayOptions) -> tuple[list[dict], str, dict]:
         "prometheus.io/scrape": "true",
         "prometheus.io/port": str(port),
     }
+    args = container["args"]
+    fraction = str(memory_fraction(opt))
+    if "--gpu-memory-utilization" in args:
+        args[args.index("--gpu-memory-utilization") + 1] = fraction
+    else:
+        args += ["--gpu-memory-utilization", fraction]
+    if opt.gpu_share == "runtime":
+        if gpu_key(b.vendor) != NVIDIA_RESOURCE:
+            raise TtalkkakError("이 칩은 runtime 공유를 지원하지 않습니다", 2)
+        del container["resources"]
+        container.setdefault("env", []).append(
+            {"name": "NVIDIA_VISIBLE_DEVICES", "value": "all"}
+        )
+        tmpl["spec"]["runtimeClassName"] = "nvidia"
     if v.VLLM_CACHED_USAGE_FLAG not in container["args"]:
         container["args"].append(v.VLLM_CACHED_USAGE_FLAG)
     labels = {"app.kubernetes.io/name": dep["metadata"]["name"]}
     return [dep, svc], resource_name(b), {"labels": labels, "port": port}
+
+
+def _autoscale(opt: GatewayOptions, deployment: str) -> list[dict]:
+    ns = opt.namespace
+    return [
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": _meta("ttalkkak-autoscale", ns),
+            "data": {
+                "enabled": "true" if opt.autoscale else "false",
+                "max_replicas": str(opt.max_replicas),
+                "deployment": deployment,
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": _meta("ttalkkak-capacity", ns),
+            "data": {"capacity.json": "{}"},
+        },
+    ]
 
 
 def _llmd(name: str, ns: str, pool: dict) -> list[dict]:
@@ -649,14 +700,25 @@ def render_stack(
     cost: CostResult | None,
     opt: GatewayOptions,
 ) -> dict[str, str]:
+    if opt.replicas > opt.max_replicas:
+        raise TtalkkakError(
+            f"복제본 수({opt.replicas})가 최대 복제본 수({opt.max_replicas})보다 큽니다",
+            2,
+        )
     if cost is not None and cost.gpus_needed and opt.replicas == 1:
-        opt = opt.model_copy(update={"replicas": cost.gpus_needed})
+        replicas = cost.gpus_needed
+        opt = opt.model_copy(
+            update={
+                "replicas": replicas,
+                "max_replicas": max(opt.max_replicas, replicas),
+            }
+        )
     ns = opt.namespace
     vllm, name, pool = _vllm(run_dir, opt)
     files = {
         "00-namespace.yaml": dump(_namespace(store, opt)),
         "10-redis.yaml": dump(_redis(opt)),
-        "20-vllm.yaml": dump(vllm),
+        "20-vllm.yaml": dump(vllm + _autoscale(opt, name)),
         "25-ops-serve.yaml": dump(_ops_serve(opt, cost)),
         "30-llmd.yaml": dump(_llmd(name, ns, pool)),
         "40-gateway.yaml": dump(_gateway(store, opt, name, ns)),
@@ -687,7 +749,7 @@ README = """# ttalkkak gateway stack
 | 00-namespace.yaml | namespace, tenant key hashes and cache salts (Secret) |
 | 10-redis.yaml | Redis for global token rate limits (reachable from envoy-gateway-system only) |
 | 15-dex.yaml | Dex login server at {issuer} (absent with --issuer) |
-| 20-vllm.yaml | vLLM Deployment + Service |
+| 20-vllm.yaml | vLLM Deployment + Service, autoscale and capacity ConfigMaps |
 | 30-llmd.yaml | InferencePool + endpoint picker (EPP) |
 | 25-ops-serve.yaml | ttalkkak ops serve: /authz, /v1/pricing, /v1/usage, /metrics |
 | 40-gateway.yaml | Gateway, AIGatewayRoute (token costs), auth, cache salt, limits |

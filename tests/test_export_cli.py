@@ -111,7 +111,9 @@ def test_ops_export_has_chip_option():
 def test_gateway_export_passes_chip(tmp_path, monkeypatch):
     seen = {}
 
-    def fake(run_dir, out, force, image, replicas, issuer, hostname, db, chip=None):
+    def fake(
+        run_dir, out, force, image, replicas, issuer, hostname, db, chip=None, *rest
+    ):
         seen["chip"] = chip
         return []
 

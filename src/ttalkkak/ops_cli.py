@@ -93,6 +93,15 @@ def export(
     hostname: str = typer.Option("ttalkkak.local", help="gateway: public hostname"),
     db: str | None = DB_OPT,
     chip: str | None = CHIP_OPT,
+    max_replicas: int | None = typer.Option(
+        None, help="gateway: 최대 복제본 수 (기본: --replicas와 같음)"
+    ),
+    autoscale: bool = typer.Option(
+        True, "--autoscale/--no-autoscale", help="gateway: 복제본 자동 증감"
+    ),
+    gpu_share: str = typer.Option(
+        "resource", help="gateway: GPU 공유 방식 resource | runtime"
+    ),
 ) -> None:
     from ttalkkak.export import write_export
 
@@ -100,7 +109,7 @@ def export(
         if target == "gateway":
             written = _export_gateway(
                 ROOT / "runs" / run, Path(out), force, image, replicas, issuer,
-                hostname, db, chip,
+                hostname, db, chip, max_replicas, autoscale, gpu_share,
             )  # fmt: skip
         else:
             written = write_export(
@@ -356,8 +365,21 @@ def tenants_user_remove(email: str, db: str | None = DB_OPT):
 
 
 def _export_gateway(
-    run_dir, out, force, image, replicas, issuer, hostname, db, chip=None
+    run_dir,
+    out,
+    force,
+    image,
+    replicas,
+    issuer,
+    hostname,
+    db,
+    chip=None,
+    max_replicas=None,
+    autoscale=True,
+    gpu_share="resource",
 ):
+    if gpu_share not in ("resource", "runtime"):
+        raise TtalkkakError("--gpu-share는 resource 또는 runtime이어야 합니다", 2)
     from ttalkkak.cost.model import CostResult
     from ttalkkak.gateway.manifests import GatewayOptions, render_stack
 
@@ -374,6 +396,9 @@ def _export_gateway(
         image=image,
         dex_users=_load_dex_users(),
         chip=chip,
+        max_replicas=max_replicas or replicas,
+        autoscale=autoscale,
+        gpu_share=gpu_share,
     )
     files = render_stack(run_dir, _store(db), cost, opt)
     existing = [out / n for n in files if (out / n).exists()]
