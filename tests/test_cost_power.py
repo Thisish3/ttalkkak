@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from ttalkkak.cost.power import POWER_CMD, energy_j, parse_nvsmi_csv
+from ttalkkak.chips import chip_by_name
+from ttalkkak.cost.power import energy_j, parse_nvsmi_csv, power_cmd
 from ttalkkak.errors import TtalkkakError
 
 CSV = (Path(__file__).parent / "fixtures/power/nvsmi.csv").read_text()
@@ -38,8 +39,13 @@ def test_bad_rows_are_skipped():
 
 
 def test_power_cmd_samples_every_500ms_as_csv():
-    assert POWER_CMD[0] == "nvidia-smi" and "-lms" in POWER_CMD and "500" in POWER_CMD
-    assert any(a.startswith("--query-gpu=timestamp,power.draw") for a in POWER_CMD)
+    cmd = power_cmd(chip_by_name("nvidia-gpu"))
+    assert cmd[0] == "nvidia-smi" and "-lms" in cmd and "500" in cmd
+    assert any(a.startswith("--query-gpu=timestamp,power.draw") for a in cmd)
+
+
+def test_power_cmd_none_for_chip_without_power():
+    assert power_cmd(chip_by_name("amd-gpu")) is None
 
 
 def test_large_gap_inside_window_is_rejected():

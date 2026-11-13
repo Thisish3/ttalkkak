@@ -15,7 +15,6 @@ INFERENCE_POOL_API = "inference.networking.k8s.io/v1"
 EPP_IMAGE = "registry.k8s.io/gateway-api-inference-extension/epp:v1.5.0"
 DEX_IMAGE = "ghcr.io/dexidp/dex:v2.46.1"
 REDIS_IMAGE = "redis:8.10.3"
-DCGM_EXPORTER_IMAGE = "nvcr.io/nvidia/k8s/dcgm-exporter:4.9.0"
 # vLLM fills usage.prompt_tokens_details.cached_tokens only with this flag.
 VLLM_CACHED_USAGE_FLAG = "--enable-prompt-tokens-details"
 AI_GATEWAY_METADATA_NS = "io.envoy.ai_gateway"

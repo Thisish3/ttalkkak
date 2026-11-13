@@ -8,6 +8,7 @@ import pytest
 
 from ttalkkak.cost.power import TS_FORMAT, parse_nvsmi_csv
 from ttalkkak.cost.runner import guidellm_cmd, parse_energy_run, parse_points, run_cost
+from ttalkkak.errors import TtalkkakError
 
 FIX = Path(__file__).parent / "fixtures"
 BASE = json.loads((FIX / "guidellm/report_mock.json").read_text())
@@ -150,3 +151,10 @@ def test_ops_cost_reports_failed_load_without_traceback(tmp_path, monkeypatch):
     monkeypatch.setattr(ops_cli, "ROOT", tmp_path)
     r = CliRunner().invoke(app, ["ops", "cost", "--run", "r1"])
     assert r.exit_code == 1 and "guidellm" in r.output and r.exc_info[0] is SystemExit
+
+
+def test_run_cost_refuses_chip_without_power_command(tmp_path):
+    run_dir = tmp_path / "r1"
+    shutil.copytree(FIX / "runs/vllm-amd", run_dir)
+    with pytest.raises(TtalkkakError, match="이 칩은 전력 측정 명령이 없습니다"):
+        run_cost(run_dir, tmp_path / "c.yaml", run=None, popen=None)

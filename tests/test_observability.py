@@ -1,8 +1,10 @@
 import json
 import re
+from pathlib import Path
 
 import yaml
 
+from ttalkkak.chips import chip_by_name
 from ttalkkak.cost.model import CostConfig, CostResult, Prices
 from ttalkkak.gateway.manifests import GatewayOptions
 from ttalkkak.gateway.observability import METRICS, render_observability
@@ -99,3 +101,55 @@ def test_stack_has_prometheus_grafana_otel_jaeger_dcgm():
     }
     assert env["GF_AUTH_ANONYMOUS_ENABLED"]["value"] == "false"
     assert "secretKeyRef" in env["GF_SECURITY_ADMIN_PASSWORD"]["valueFrom"]
+
+
+NOT_PROVIDED = "이 칩은 이 지표를 내지 않음"
+FIXTURE = json.loads(
+    (Path(__file__).parent / "fixtures/observability_nvidia.json").read_text()
+)
+
+
+def test_nvidia_dashboards_unchanged():
+    nv = chip_by_name("nvidia-gpu")
+    assert render_observability(COST, GatewayOptions(), nv) == FIXTURE["with_cost"]
+    assert render_observability(None, GatewayOptions(), nv) == FIXTURE["no_cost"]
+    assert render_observability(None, GatewayOptions()) == FIXTURE["no_cost"]
+
+
+def test_amd_no_exporter_and_panels_say_not_provided():
+    files = render_observability(COST, GatewayOptions(), chip_by_name("amd-gpu"))
+    docs = yaml.safe_load_all(files["50-observability.yaml"])
+    assert "dcgm-exporter" not in {d["metadata"]["name"] for d in docs}
+    gpu = json.loads(files["grafana/gpu.json"])
+    assert len(gpu["panels"]) == 4
+    assert all(
+        p["type"] == "text" and NOT_PROVIDED in p["title"] for p in gpu["panels"]
+    )
+    usage = json.loads(files["grafana/usage.json"])
+    power = next(p for p in usage["panels"] if p["title"].startswith("전기료"))
+    assert power["type"] == "text" and NOT_PROVIDED in power["title"]
+    assert "DCGM" not in files["grafana/gpu.json"] + files["alerts.yaml"]
+
+
+def test_alert_skipped_without_temperature_metric():
+    nv = chip_by_name("nvidia-gpu")
+    metrics = {k: m for k, m in nv.telemetry.metrics.items() if k != "temperature"}
+    chip = nv.model_copy(
+        update={"telemetry": nv.telemetry.model_copy(update={"metrics": metrics})}
+    )
+    rules = yaml.safe_load(
+        render_observability(None, GatewayOptions(), chip)["alerts.yaml"]
+    )
+    names = {r["alert"] for g in rules["groups"] for r in g["rules"]}
+    assert "GpuHot" not in names and "EngineDown" in names
+
+
+def test_exporter_rendered_only_when_image_is_set():
+    nv = chip_by_name("nvidia-gpu")
+    chip = nv.model_copy(
+        update={"telemetry": nv.telemetry.model_copy(update={"exporter_image": None})}
+    )
+    docs = yaml.safe_load_all(
+        render_observability(None, GatewayOptions(), chip)["50-observability.yaml"]
+    )
+    assert "dcgm-exporter" not in {d["metadata"]["name"] for d in docs}

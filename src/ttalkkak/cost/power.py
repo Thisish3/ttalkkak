@@ -2,17 +2,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from itertools import pairwise
 
+from ttalkkak.chips import ChipConfig
 from ttalkkak.errors import TtalkkakError
 
 # Timestamps are local wall-clock time, so samples and guidellm's epoch
 # start/end times must come from the same machine.
-POWER_CMD = [
-    "nvidia-smi",
-    "--query-gpu=timestamp,power.draw,clocks.sm,temperature.gpu",
-    "--format=csv",
-    "-lms",
-    "500",
-]
+
+
+def power_cmd(chip: ChipConfig) -> list[str] | None:
+    return list(chip.telemetry.power_watts) if chip.telemetry.power_watts else None
+
+
 TS_FORMAT = "%Y/%m/%d %H:%M:%S.%f"
 
 

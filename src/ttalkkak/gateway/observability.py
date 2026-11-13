@@ -2,6 +2,7 @@ import json
 
 import yaml
 
+from ttalkkak.chips import ChipConfig, chip_by_name
 from ttalkkak.cost.model import CostConfig, CostResult
 from ttalkkak.export.common import dump
 from ttalkkak.gateway import versions as v
@@ -30,6 +31,19 @@ def _panel(i: int, title: str, exprs: dict[str, str], unit: str = "short") -> di
     }
 
 
+NOT_PROVIDED = "이 칩은 이 지표를 내지 않음"
+
+
+def _text_panel(i: int, title: str) -> dict:
+    return {
+        "id": i,
+        "type": "text",
+        "title": f"{title} ({NOT_PROVIDED})",
+        "gridPos": {"x": (i - 1) % 2 * 12, "y": (i - 1) // 2 * 8, "w": 12, "h": 8},
+        "options": {"mode": "markdown", "content": NOT_PROVIDED},
+    }
+
+
 def _dashboard(uid: str, title: str, panels: list[tuple]) -> str:
     return json.dumps(
         {
@@ -38,14 +52,22 @@ def _dashboard(uid: str, title: str, panels: list[tuple]) -> str:
             "refresh": "10s",
             "time": {"from": "now-1h", "to": "now"},
             "schemaVersion": 39,
-            "panels": [_panel(i, *p) for i, p in enumerate(panels, 1)],
+            "panels": [
+                _text_panel(i, p[0]) if p[1] is None else _panel(i, *p)
+                for i, p in enumerate(panels, 1)
+            ],
         },
         indent=1,
         ensure_ascii=False,
     )
 
 
-def _dashboards(cost: CostResult | None) -> dict[str, str]:
+def _dashboards(cost: CostResult | None, chip: ChipConfig) -> dict[str, str]:
+    m = chip.telemetry.metrics
+
+    def gpu_panel(title: str, key: str, unit: str) -> tuple:
+        return (title, {"{{gpu}}": m[key]} if key in m else None, unit)
+
     cfg = cost.config if cost else CostConfig()
     price = cost.price_krw_per_mtok if cost else None
     krw_per_ws = cfg.electricity_krw_per_kwh * cfg.pue / 3.6e6
@@ -53,10 +75,10 @@ def _dashboards(cost: CostResult | None) -> dict[str, str]:
         "ttalkkak-gpu",
         "ttalkkak · GPU",
         [
-            ("사용률", {"{{gpu}}": "DCGM_FI_DEV_GPU_UTIL"}, "percent"),
-            ("전력", {"{{gpu}}": "DCGM_FI_DEV_POWER_USAGE"}, "watt"),
-            ("메모리 사용", {"{{gpu}}": "DCGM_FI_DEV_FB_USED"}, "decmbytes"),
-            ("온도", {"{{gpu}}": "DCGM_FI_DEV_GPU_TEMP"}, "celsius"),
+            gpu_panel("사용률", "utilization", "percent"),
+            gpu_panel("전력", "power", "watt"),
+            gpu_panel("메모리 사용", "memory_used", "decmbytes"),
+            gpu_panel("온도", "temperature", "celsius"),
         ],
     )
     serving = _dashboard(
@@ -114,7 +136,9 @@ def _dashboards(cost: CostResult | None) -> dict[str, str]:
         ),
         (
             f"전기료 (원/시간, {cfg.electricity_krw_per_kwh}원/kWh × PUE {cfg.pue})",
-            {"원/시간": f"sum(DCGM_FI_DEV_POWER_USAGE) * {krw_per_ws:.10g} * 3600"},
+            {"원/시간": f"sum({m['power']}) * {krw_per_ws:.10g} * 3600"}
+            if "power" in m
+            else None,
         ),
     ]
     if price:
@@ -140,7 +164,7 @@ def _dashboards(cost: CostResult | None) -> dict[str, str]:
     }
 
 
-def _alerts(cfg: CostConfig) -> str:
+def _alerts(cfg: CostConfig, chip: ChipConfig) -> str:
     def rule(name, expr, summary):
         return {
             "alert": name,
@@ -169,7 +193,11 @@ def _alerts(cfg: CostConfig) -> str:
             " > 0.8 * max by (tenant) (ttalkkak_tenant_limit_tokens_per_minute)",
             "테넌트가 분당 토큰 한도의 80%를 넘었습니다",
         ),
-        rule("GpuHot", "max(DCGM_FI_DEV_GPU_TEMP) > 85", "GPU 온도 85°C 초과"),
+        *(
+            [rule("GpuHot", f"max({temp}) > 85", "GPU 온도 85°C 초과")]
+            if (temp := chip.telemetry.metrics.get("temperature"))
+            else []
+        ),
         rule(
             "EngineDown",
             "absent(vllm:num_requests_running)",
@@ -237,7 +265,9 @@ def _mount(name, path):
     return {"name": name, "mountPath": path}
 
 
-def _stack(opt: GatewayOptions, dashboards: dict[str, str], alerts: str) -> list[dict]:
+def _stack(
+    opt: GatewayOptions, dashboards: dict[str, str], alerts: str, chip: ChipConfig
+) -> list[dict]:
     ns = opt.namespace
     prom_cfg = {
         "global": {"scrape_interval": "10s"},
@@ -326,6 +356,35 @@ def _stack(opt: GatewayOptions, dashboards: dict[str, str], alerts: str) -> list
         },
     }
     dcgm_labels = {"app.kubernetes.io/name": "dcgm-exporter"}
+    exporter = (
+        [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "DaemonSet",
+                "metadata": {"name": "dcgm-exporter", "namespace": ns, "labels": dcgm_labels},
+                "spec": {
+                    "selector": {"matchLabels": dcgm_labels},
+                    "template": {
+                        "metadata": {
+                            "labels": dcgm_labels,
+                            "annotations": {"prometheus.io/scrape": "true", "prometheus.io/port": "9400"},
+                        },
+                        "spec": {
+                            "containers": [{
+                                "name": "dcgm-exporter",
+                                "image": chip.telemetry.exporter_image,
+                                "ports": [{"containerPort": 9400}],
+                                "securityContext": {"capabilities": {"add": ["SYS_ADMIN"]}},
+                                "env": [{"name": "NVIDIA_VISIBLE_DEVICES", "value": "all"}],
+                            }],
+                        },
+                    },
+                },
+            },
+        ]
+        if chip.telemetry.exporter_image
+        else []
+    )  # fmt: skip
     docs = [
         *rbac,
         _cm(ns, "prometheus", {"prometheus.yml": yaml.safe_dump(prom_cfg), "alerts.yaml": alerts}),
@@ -357,29 +416,7 @@ def _stack(opt: GatewayOptions, dashboards: dict[str, str], alerts: str) -> list
             4317, mounts=[_mount("cfg", "/etc/otel")], volumes=[_vol("cfg", "otel-collector")],
         ),
         *_deployment(ns, "jaeger", v.JAEGER_IMAGE, [], 16686),
-        {
-            "apiVersion": "apps/v1",
-            "kind": "DaemonSet",
-            "metadata": {"name": "dcgm-exporter", "namespace": ns, "labels": dcgm_labels},
-            "spec": {
-                "selector": {"matchLabels": dcgm_labels},
-                "template": {
-                    "metadata": {
-                        "labels": dcgm_labels,
-                        "annotations": {"prometheus.io/scrape": "true", "prometheus.io/port": "9400"},
-                    },
-                    "spec": {
-                        "containers": [{
-                            "name": "dcgm-exporter",
-                            "image": v.DCGM_EXPORTER_IMAGE,
-                            "ports": [{"containerPort": 9400}],
-                            "securityContext": {"capabilities": {"add": ["SYS_ADMIN"]}},
-                            "env": [{"name": "NVIDIA_VISIBLE_DEVICES", "value": "all"}],
-                        }],
-                    },
-                },
-            },
-        },
+        *exporter,
     ]  # fmt: skip
     jaeger_svc = next(
         d for d in docs if d["kind"] == "Service" and d["metadata"]["name"] == "jaeger"
@@ -392,13 +429,14 @@ def _stack(opt: GatewayOptions, dashboards: dict[str, str], alerts: str) -> list
 
 
 def render_observability(
-    cost: CostResult | None, opt: GatewayOptions
+    cost: CostResult | None, opt: GatewayOptions, chip: ChipConfig | None = None
 ) -> dict[str, str]:
+    chip = chip or chip_by_name("nvidia-gpu")
     cfg = cost.config if cost else CostConfig()
-    dashboards = _dashboards(cost)
-    alerts = _alerts(cfg)
+    dashboards = _dashboards(cost, chip)
+    alerts = _alerts(cfg, chip)
     return {
-        "50-observability.yaml": dump(_stack(opt, dashboards, alerts)),
+        "50-observability.yaml": dump(_stack(opt, dashboards, alerts, chip)),
         **dashboards,
         "alerts.yaml": alerts,
     }

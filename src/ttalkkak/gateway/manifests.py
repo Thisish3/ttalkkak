@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from ttalkkak.chips import chip_from_ref
+from ttalkkak.chips import chip_by_name, chip_from_ref
 from ttalkkak.cost.model import CostResult
 from ttalkkak.export.common import dump, load_run, resource_name
 from ttalkkak.export.k8s import render as render_k8s
@@ -665,7 +665,10 @@ def render_stack(
         files["15-dex.yaml"] = dump(_dex(opt))
     from ttalkkak.gateway.observability import render_observability
 
-    files.update(render_observability(cost, opt))
+    chip = (
+        chip_from_ref(opt.chip) if opt.chip else chip_by_name(load_run(run_dir).vendor)
+    )
+    files.update(render_observability(cost, opt, chip))
     files["README.md"] = README.format(
         ns=ns,
         host=opt.hostname,

@@ -2,6 +2,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from ttalkkak.chips import ChipConfig, chip_by_name
 from ttalkkak.cost.model import (
     CostResult,
     EnergyRun,
@@ -9,8 +10,9 @@ from ttalkkak.cost.model import (
     compute,
     load_or_create_config,
 )
-from ttalkkak.cost.power import POWER_CMD, Sample, energy_j, parse_nvsmi_csv
+from ttalkkak.cost.power import Sample, energy_j, parse_nvsmi_csv, power_cmd
 from ttalkkak.errors import TtalkkakError
+from ttalkkak.export.common import load_run
 from ttalkkak.pipeline import resolve_endpoint
 
 STREAMS = [1, 2, 4, 8, 16]
@@ -140,16 +142,19 @@ def run_cost(
     popen=subprocess.Popen,
     max_seconds: int = 60,
     target_output_tok_s: float | None = None,
+    chip: ChipConfig | None = None,
 ) -> tuple[CostResult, bool]:
+    chip = chip or chip_by_name(load_run(run_dir).vendor)
+    cmd = power_cmd(chip)
+    if cmd is None:
+        raise TtalkkakError("이 칩은 전력 측정 명령이 없습니다", 2)
     cfg, created = load_or_create_config(cfg_path)
     if target_output_tok_s is not None:
         cfg = cfg.model_copy(update={"target_output_tok_s": target_output_tok_s})
     base_url, model, _ = resolve_endpoint(run_dir)
     work = run_dir / "cost"
     work.mkdir(parents=True, exist_ok=True)
-    power = popen(
-        POWER_CMD, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
-    )
+    power = popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     reports, warnings = {}, []
     try:
         for name, (data, streams) in WORKLOADS.items():
