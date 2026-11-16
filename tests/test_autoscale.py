@@ -41,7 +41,7 @@ def test_up_after_two_minutes_over_80():
     assert (d.from_replicas, d.to_replicas) == (1, 2)
     assert "84" in d.reason
     assert st.last_dir == "up"
-    assert st.last_change == T0 + timedelta(seconds=120)
+    assert st.last_change == T0 + timedelta(seconds=121)
 
 
 def test_up_on_waiting_two_minutes():
@@ -113,3 +113,13 @@ def test_one_step_at_a_time():
     assert isinstance(d, Decision)
     assert d.action == "up"
     assert d.to_replicas - d.from_replicas == 1
+
+
+def test_exactly_two_minutes_holds():
+    d, _ = run([sample(i, util=84) for i in range(121)])
+    assert d.action == "hold"
+
+
+def test_idle_hold_while_requests_wait():
+    d, _ = run([sample(0, util=25, waiting=1, ready=3, desired=3, idle=1)])
+    assert d.action == "hold"

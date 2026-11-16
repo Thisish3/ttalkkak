@@ -55,7 +55,7 @@ def _sustained(history: list[Sample], now: datetime, for_s: int, ok) -> bool:
     cutoff = now - timedelta(seconds=for_s)
     window = [h for h in history if h.t >= cutoff]
     before = [h for h in history if h.t < cutoff]
-    if not before and not any(h.t == cutoff for h in window):
+    if not before:
         return False
     return all(ok(h) for h in window + before[-1:])
 
@@ -143,7 +143,7 @@ def decide(
             f"용량 사용률 {s.util_pct:g} %가 {span} 넘게 계속 {rules.down_pct:g} % 이하",
         )
 
-    if s.idle_replicas > 0 and s.desired > min_r and s.desired > 1:
+    if s.idle_replicas > 0 and s.waiting == 0 and s.desired > min_r and s.desired > 1:
         projected = s.util_pct * s.desired / (s.desired - 1)
         if projected <= rules.idle_after_pct:
             return change(
