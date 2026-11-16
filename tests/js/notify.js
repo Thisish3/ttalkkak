@@ -5,7 +5,7 @@ const vm = require("vm");
 const path = require("path");
 
 const src = fs.readFileSync(path.join(__dirname, "../../desktop/web/notify.js"), "utf8");
-const ctx = { console: { error() {} } };
+const ctx = { console: { error() {}, warn() {} } };
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
 const fail = (m) => { console.error("FAIL: " + m); process.exit(1); };
@@ -21,7 +21,7 @@ const make = () => {
   return vm.runInContext("createNotifier({ send: SEND, now: NOW, enabled: ON })", ctx);
 };
 const dec = (t, action, from, to, reason = "사유") => ({ t, action, from_replicas: from, to_replicas: to, reason });
-const snap = (decisions, rejected, tenantRejected) => ({
+const snap = (decisions, rejected) => ({
   autoscale: { decisions },
   capacity: { signals: { rejected_429_1h: rejected } },
 });
@@ -116,4 +116,48 @@ ctx.BROKEN = { getItem() { throw new Error("x"); }, setItem() { throw new Error(
 eq(vm.runInContext("notifyEnabled(BROKEN)", ctx), true, "broken storage -> on");
 vm.runInContext("setNotifyEnabled(BROKEN, false)", ctx);
 
+
+// M2: control characters stripped, long text capped
+n = make();
+n.observe(snap([], 0));
+n.observe(snap([dec("long", "up", 1, 2, "a\u0007b\n" + "x".repeat(500))], 0));
+if (/[\u0000-\u001f]/.test(sent[0][1])) fail("control chars kept");
+if (sent[0][1].length > 140 || !sent[0][1].endsWith("…")) fail("body not capped: " + sent[0][1].length);
+
+// M1: an async send that rejects is swallowed (no unhandled rejection)
+const warns = [];
+ctx.console.warn = (...a) => warns.push(a);
+ctx.SEND = () => Promise.reject(new Error("denied"));
+n = vm.runInContext("createNotifier({ send: SEND, now: NOW, enabled: ON })", ctx);
+n.observe(snap([], 0));
+n.observe(snap([dec("r", "up", 1, 2)], 0));
+process.on("unhandledRejection", () => fail("unhandled rejection from send"));
+
+// M3: a spike while switched off does not use up the cooldown
+n = make();
+clock = 0; n.observe(snap([], 100));
+on = false;
+clock = 5000; n.observe(snap([], 120));
+clock = 20000; n.observe(snap([], 120));
+on = true;
+clock = 30000; n.observe(snap([], 120));
+eq(sent.length, 0, "ongoing spike while off is not announced on enabling");
+for (let t = 90000; t <= 100000; t += 5000) { clock = t; n.observe(snap([], 120)); }
+clock = 110000; n.observe(snap([], 135));
+eq(sent.length, 1, "first real spike after switching on notifies (cooldown not consumed)");
+
+// M4: rise is measured against the count 60 s ago; old rows sliding out are not a spike
+n = make();
+clock = 0; n.observe(snap([], 100));
+clock = 30000; n.observe(snap([], 50));
+clock = 60000; n.observe(snap([], 62));
+eq(sent.length, 0, "slide-out then small refill is not a spike");
+clock = 90000; n.observe(snap([], 80));
+eq(sent.length, 1, "real rise of 30 within 60 s notifies");
+
+// M7: the seen set is bounded
+n = make();
+n.observe(snap([], 0));
+for (let i = 0; i < 1000; i++) n.observe(snap([dec("d" + i, "hold", null, null)], 0));
+if (vm.runInContext("typeof SEEN_MAX", ctx) !== "number") fail("SEEN_MAX missing");
 console.log("OK");

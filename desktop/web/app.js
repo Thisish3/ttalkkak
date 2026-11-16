@@ -935,20 +935,44 @@ async function startLoadtest() {
 }
 
 let notifier;
+let notifyDenied = false;
+let notifyBusy = false;
+const NOTIFY_POLL_MS = 15000;
+const NOTIFY_LABEL = "알림 — 자동 증감 결정과 429 거절 급증을 운영체제 알림으로 알립니다";
 
 async function sendOsNotification(title, body) {
+  if (notifyDenied) return;
   const n = window.__TAURI__.notification;
-  if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") return;
+  if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") {
+    notifyDenied = true;
+    $("notif-text").textContent = "알림 — 권한 없음 (시스템 설정에서 허용한 뒤 앱을 다시 켜세요)";
+    return;
+  }
   n.sendNotification({ title, body });
+}
+
+async function notifyPoll() {
+  if (!notifier || notifyBusy || !$("notif").checked) return;
+  if (live.on && !document.hidden) return;
+  notifyBusy = true;
+  try {
+    notifier.observe(await call("/api/live"));
+  } catch (e) {
+    console.warn(e);
+  } finally {
+    notifyBusy = false;
+  }
 }
 
 function initNotifications() {
   if (!inApp || typeof createNotifier !== "function") return;
   const box = $("notif");
   box.checked = notifyEnabled(localStorage);
+  $("notif-text").textContent = NOTIFY_LABEL;
   $("notif-row").hidden = false;
   box.onchange = () => setNotifyEnabled(localStorage, box.checked);
   notifier = createNotifier({ send: sendOsNotification, now: Date.now, enabled: () => box.checked });
+  setInterval(notifyPoll, NOTIFY_POLL_MS);
 }
 
 function initPanels() {

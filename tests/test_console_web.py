@@ -160,9 +160,14 @@ def test_notification_mapping_and_429_spike_debounce():
     assert r.returncode == 0 and r.stdout.strip() == "OK", r.stderr + r.stdout
 
 
-def test_notifications_are_app_only_and_switchable():
-    js = (WEB / "app.js").read_text(encoding="utf-8")
-    html = (WEB / "index.html").read_text(encoding="utf-8")
-    assert 'id="notif"' in html and html.index("notify.js") < html.index("app.js")
-    init = js[js.index("function initNotifications(") :].split("\n}\n")[0]
-    assert "!inApp" in init and "notifyEnabled(localStorage)" in init
+def test_notification_poll_permission_and_toggle_run_in_the_app_scripts():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    r = subprocess.run(
+        [node, str(ROOT / "tests" / "js" / "notify_poll.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0 and r.stdout.strip() == "OK", r.stderr + r.stdout

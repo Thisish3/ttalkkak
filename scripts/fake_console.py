@@ -28,9 +28,13 @@ from ttalkkak.tenants.store import TenantStore
 from ttalkkak.ui import auth
 from ttalkkak.ui.app import UiDeps, allowed_hosts, create_app
 
-CHIP = chip_by_name("nvidia-gpu")
-PODS = ["vllm-qwen-7d9f-aaaaa", "vllm-qwen-7d9f-bbbbb"]
-MODEL = "Qwen/Qwen3-8B"
+REAL_CHIP = chip_by_name("nvidia-gpu")
+CHIP = REAL_CHIP.model_copy(
+    update={"name": f"nvidia-gpu · {'가짜 데이터 (fake_console)'}"}
+)
+PODS = ["vllm-qwen-fake-aaaaa", "vllm-qwen-fake-bbbbb"]
+FAKE = "가짜 데이터 (fake_console)"
+MODEL = f"FAKE-Qwen3-8B · {FAKE}"
 MAX_TPM = 21500
 
 
