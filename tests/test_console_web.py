@@ -99,8 +99,8 @@ def test_hostile_server_strings_are_escaped_when_rendered():
 def test_user_facing_placeholder_and_default_page():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = (WEB / "app.js").read_text(encoding="utf-8")
-    assert "11c" not in html and "실시간 화면은 준비 중입니다" in html
-    assert ': "runs"' in js and "u-msg" not in html
+    assert "실시간 화면은 준비 중입니다" not in html and 'id="live-gauge"' in html
+    assert ': "live"' in js and "u-msg" not in html
 
 
 def test_csv_in_the_app_goes_through_the_rust_command():
@@ -118,3 +118,24 @@ def test_key_modal_ignores_escape_and_has_explicit_close():
     assert "복사했습니다, 닫기" in show_key and "다시 볼 수 없습니다" in show_key
     confirm = js[js.index("function confirmDialog(") :].split("\n}\n")[0]
     assert "persistent" not in confirm
+
+
+def test_live_screen_renders_fixture_snapshots_and_escapes_server_strings():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    r = subprocess.run(
+        [node, str(ROOT / "tests" / "js" / "live_render.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0 and r.stdout.strip() == "OK", r.stderr + r.stdout
+
+
+def test_live_screen_polls_the_api_without_websocket_and_confirms_mutations():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "WebSocket" not in js and "EventSource" not in js
+    assert "document.hidden" in js and "visibilitychange" in js
+    for path in ("/api/live", "/api/loadtests", "/api/loadtest", "/api/autoscale"):
+        assert f'"{path}"' in js

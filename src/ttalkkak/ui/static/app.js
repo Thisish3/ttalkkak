@@ -38,11 +38,12 @@ let panelsReady = false;
 
 function showPanel() {
   const nav = document.getElementById("nav");
-  const id = NAV.some((n) => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : "runs";
+  const id = NAV.some((n) => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : "live";
   document.querySelectorAll(".panel").forEach((p) => (p.hidden = p.id !== "panel-" + id));
   nav.querySelectorAll("a").forEach((a) =>
     a.dataset.panel === id ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")
   );
+  if (id !== "live" && typeof liveStop === "function") liveStop();
   if (panelsReady && onShow[id]) onShow[id]();
 }
 
@@ -565,6 +566,316 @@ async function downloadCsv() {
   }
 }
 
+// ---- live screen ----
+const LIVE_MS = 2000;
+const live = { on: false, timer: null, busy: false, lost: false, last: null, max: 0, enabled: null };
+
+const num = (n, d = 0) =>
+  typeof n === "number" && isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "-";
+const pctText = (n) => (typeof n === "number" ? `${num(n)} %` : "-");
+const LEVEL_ICON = { ok: "●", warn: "▲", bad: "✕", mut: "–" };
+const level = (p, warn, bad) => (p == null ? "mut" : p >= bad ? "bad" : p >= warn ? "warn" : "ok");
+const timeText = (t) => {
+  const d = new Date(t);
+  return esc(isNaN(d) ? t : d.toLocaleTimeString("ko-KR", { hour12: false }));
+};
+const dateTimeText = (t) => {
+  const d = new Date(t);
+  return esc(isNaN(d) ? t : d.toLocaleString("ko-KR", { hour12: false }));
+};
+const errsFor = (errors, keys) => keys.filter((k) => errors[k]).map((k) => errorBox(errors[k])).join("");
+
+function barCell(p, kind) {
+  const w = Math.max(0, Math.min(100, p));
+  return `<div class="barcell"><div class="bar ${kind}" role="img" aria-label="${esc(num(p))} %"><i style="width:${w}%"></i></div><span class="num">${LEVEL_ICON[kind]} ${num(p)} %</span></div>`;
+}
+
+function gaugeSvg(p) {
+  const r = 58, c = 2 * Math.PI * r, kind = level(p, 70, 90), w = Math.max(0, Math.min(100, p)) / 100;
+  return `<svg class="gauge" viewBox="0 0 150 150" role="img" aria-label="용량 사용률 ${num(p)} %">
+    <circle class="track" cx="75" cy="75" r="${r}"/>
+    <circle class="fill ${kind}" cx="75" cy="75" r="${r}" stroke-dasharray="${(c * w).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 75 75)"/>
+    <text x="75" y="80" text-anchor="middle" font-size="26" font-weight="700">${num(p)} %</text>
+    <text x="75" y="100" text-anchor="middle" font-size="11">${LEVEL_ICON[kind]} ${{ ok: "여유", warn: "주의", bad: "부족", mut: "-" }[kind]}</text></svg>`;
+}
+
+function hourChart(series) {
+  const W = 300, H = 80, top = Math.max(100, ...series.map((p) => p[1]));
+  const t0 = series[0][0], t1 = series[series.length - 1][0], span = Math.max(1, t1 - t0);
+  const X = (t) => 4 + ((t - t0) / span) * (W - 8), Y = (v) => H - 14 - (v / top) * (H - 22);
+  const pts = series.map(([t, v]) => `${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="최근 1시간 용량 사용률">
+    <line class="axis" x1="4" x2="${W - 4}" y1="${Y(0)}" y2="${Y(0)}"/>
+    <line class="edge" x1="4" x2="${W - 4}" y1="${Y(90)}" y2="${Y(90)}"/>
+    <text class="edge-t" x="${W - 4}" y="${Y(90) - 3}" text-anchor="end">▲ 90 %</text>
+    <polyline class="ln" points="${pts}"/>
+    <text x="4" y="${H - 2}">1시간 전</text><text x="${W - 4}" y="${H - 2}" text-anchor="end">지금</text></svg>`;
+}
+
+function liveHeadline(s) {
+  const h = s.headline || {};
+  const tile = (label, v, unit, d = 0) => `<div>${label}<b>${num(v, d)}${v == null ? "" : " " + unit}</b></div>`;
+  return tile("동시 요청", h.concurrent, "개") + tile("첫 글자 p99", h.ttft_p99_ms, "ms") +
+    tile("토큰 간격 p99", h.itl_p99_ms, "ms", 1) + tile("출력 속도", h.output_tok_s, "토큰/초") +
+    tile("전력", h.power_w, "W") + tile("시간당 전기료", h.krw_per_hour, "원");
+}
+
+function liveGauge(c, errors) {
+  if (errors.capacity || errors.capacity_record) return errsFor(errors, ["capacity", "capacity_record"]);
+  const missing = c.missing_text ? `<div class="cap">▲ ${esc(c.missing_text)}</div>` : "";
+  if (c.state !== "ok") {
+    return `<div class="lab">용량 사용률</div>
+      <p><b>▲ 부하 시험을 먼저 돌리세요</b></p>
+      <div class="cap">${esc(c.missing_text || "지금 복제본 수와 모델에 맞는 용량 기록이 없습니다")}</div>
+      <p><button class="btn primary" data-act="goto-loadtest">부하 시험으로 이동</button></p>`;
+  }
+  const src = c.source || {};
+  return `<div class="row">${gaugeSvg(c.pct)}<div><div class="lab">용량 사용률</div>
+    <div class="cap">지금 <b>${num(c.now_tpm)}</b> 토큰/분<br>÷ 최대 <b>${num(c.max_tpm)}</b> 토큰/분<br>
+    최대 = 부하 시험(${esc(src.loadtest_id)}, 복제본 ${esc(src.replicas)}개)<br>100 %에 가까우면 거절(429)이 늘어납니다</div>${missing}</div></div>`;
+}
+
+function livePeriod(c, errors) {
+  if (errors.capacity || errors.capacity_record) return errsFor(errors, ["capacity", "capacity_record"]);
+  const p = c.period || {}, series = c.series || [];
+  const chart = series.length >= 2 ? hourChart(series) : `<div class="cap">그릴 사용률 기록이 없습니다</div>`;
+  return `<div class="lab">최근 1시간</div>${chart}
+    <div class="k"><div>최대<b>${pctText(p.max)}</b></div><div>평균<b>${pctText(p.avg)}</b></div><div>90 % 넘은 횟수<b>${num(p.over_edge)}</b></div></div>`;
+}
+
+function liveSignals(c, errors) {
+  if (errors.signals) return errsFor(errors, ["signals"]);
+  const g = c.signals || {};
+  const idle = g.idle_replicas == null ? "-" : `${num(g.idle_replicas)} / ${num(g.ready_replicas)}`;
+  return `<div class="lab">용량 부족 신호</div>
+    <div class="k"><div>한도로 거절(429)<b>${num(g.rejected_429_1h)}</b></div><div>대기 중 요청<b>${num(g.waiting)}</b></div><div>놀고 있는 복제본<b>${idle}</b></div></div>
+    <div class="cap" style="margin-top:8px">놀고 있는 복제본 = 5분 넘게 처리한 요청이 없는 복제본</div>`;
+}
+
+function liveTenants(s) {
+  return (s.tenants || []).map((t) => {
+    const cell = t.pct == null ? `<span class="mut">한도 없음</span>` : barCell(t.pct, level(t.pct, 70, 95));
+    const limit = t.limit_tpm == null ? "-" : num(t.limit_tpm);
+    return `<tr><td>${esc(t.tenant)}</td><td class="num">${num(t.tokens_last_min)} / ${limit}</td><td>${cell}</td><td class="num">${num(t.throttled_1h)}</td></tr>`;
+  }).join("") || rowMessage(4, emptyState("고객이 없습니다"));
+}
+
+const PHASE = { Running: ["ok", "실행 중"], Pending: ["warn", "대기"] };
+
+function liveReplicas(s) {
+  return (s.replicas || []).map((r) => {
+    const [kind, text] = PHASE[r.status] || (r.status === "Failed" ? ["bad", "실패"] : ["mut", r.status]);
+    const kv = r.kv == null ? "-" : barCell(r.kv, level(r.kv, 75, 90));
+    const hit = r.hit_rate == null ? "-" : `${num(r.hit_rate * 100)} %`;
+    const gpu = r.gpu_util == null ? "-" : `${num(r.gpu_util)} %`;
+    return `<tr><td>${esc(r.pod)}</td><td>${badge(kind, text)}</td><td class="num">${num(r.running)} / ${num(r.waiting)}</td><td>${kv}</td><td class="num">${hit}</td><td class="num">${gpu}</td>
+      <td><button class="btn danger small" data-act="kill" data-pod="${esc(r.pod)}">끄기</button></td></tr>`;
+  }).join("") || rowMessage(7, emptyState("복제본이 없습니다"));
+}
+
+function liveRecs(s) {
+  return (s.recommendations || []).map((r) => {
+    const btn = r.kind === "tenant_limit"
+      ? `<button class="btn secondary small" data-act="open-tenants">테넌트 화면에서 한도 보기</button>` : "";
+    return `<div class="row">${badge("warn", r.text)}${btn}</div>`;
+  }).join("") || `<div class="mut">${badge("ok", "지금 권장할 조치가 없습니다")}</div>`;
+}
+
+const DECISION = { up: ["warn", "늘림"], down: ["mut", "줄임"], hold: ["mut", "유지"], ready: ["ok", "준비 완료"] };
+
+function liveDecisions(s) {
+  return ((s.autoscale || {}).decisions || []).map((d) => {
+    const [kind, text] = DECISION[d.action] || ["mut", d.action];
+    const span = d.from_replicas == null && d.to_replicas == null ? "-" : `${d.from_replicas ?? "?"} → ${d.to_replicas ?? "?"}`;
+    const took = d.action === "ready" && d.ready_after_s != null ? ` (${num(d.ready_after_s)}초 걸림)` : "";
+    return `<tr><td>${timeText(d.t)}</td><td>${badge(kind, text)}</td><td class="num">${esc(span)}</td><td>${esc(d.reason)}${esc(took)}</td></tr>`;
+  }).join("") || rowMessage(4, emptyState("아직 결정 기록이 없습니다"));
+}
+
+function liveAuto(s) {
+  const en = (s.autoscale || {}).enabled, max = ((s.capacity || {}).signals || {}).max_replicas;
+  const sw = en == null
+    ? `<button class="btn switch" role="switch" aria-checked="false" disabled>자동 증감 – 설정을 읽지 못했습니다</button>`
+    : `<button class="btn switch" role="switch" data-act="toggle-auto" aria-checked="${en}">${en ? "● 자동 증감 켜짐" : "– 자동 증감 꺼짐"}</button>`;
+  const opts = Array.from({ length: max || 0 }, (_, i) => `<option value="${i + 1}">${i + 1}개</option>`).join("");
+  const manual = max ? `<span class="mut">수동 조정</span><select id="live-count" aria-label="복제본 수">${opts}</select><button class="btn secondary" data-act="scale">적용</button>` : "";
+  return sw + manual;
+}
+
+function renderLive(s) {
+  const errors = s.errors || {}, c = s.capacity || {};
+  live.max = (c.signals || {}).max_replicas || 0;
+  live.enabled = (s.autoscale || {}).enabled;
+  $("live-head").innerHTML = liveHeadline(s);
+  $("live-head-err").innerHTML = errsFor(errors, ["headline", "power_w"]);
+  $("live-gauge").innerHTML = liveGauge(c, errors);
+  $("live-period").innerHTML = livePeriod(c, errors);
+  $("live-signals").innerHTML = liveSignals(c, errors);
+  $("live-tenants").innerHTML = liveTenants(s);
+  $("live-tenants-err").innerHTML = errsFor(errors, ["tenants"]);
+  $("live-replicas").innerHTML = liveReplicas(s);
+  $("live-replicas-err").innerHTML = errsFor(errors, ["replicas"]);
+  $("live-recs").innerHTML = liveRecs(s);
+  $("live-auto").innerHTML = liveAuto(s);
+  $("live-auto-err").innerHTML = errsFor(errors, ["autoscale"]);
+  $("live-decisions").innerHTML = liveDecisions(s);
+}
+
+const LT_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"];
+const LT_DASH = ["", "6 3", "2 3", "8 3 2 3"];
+
+function loadtestChart(runs) {
+  const shown = runs.filter((r) => (r.stages || []).length).slice(0, 4);
+  if (!shown.length) return "";
+  const W = 360, H = 170, L = 38, B = 22, T = 8, R = 8;
+  const users = Math.max(...shown.flatMap((r) => r.stages.map((x) => x.users)));
+  const top = Math.max(1000, ...shown.flatMap((r) => r.stages.map((x) => x.ttft_p99_ms)));
+  const X = (u) => L + (u / users) * (W - L - R), Y = (v) => H - B - (v / top) * (H - B - T);
+  const lines = shown.map((r, i) => {
+    const pts = r.stages.map((x) => `${X(x.users).toFixed(1)},${Y(x.ttft_p99_ms).toFixed(1)}`).join(" ");
+    return `<polyline class="ln" style="stroke:${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}" points="${pts}"/>`;
+  }).join("");
+  const legend = shown.map((r, i) =>
+    `<span><svg viewBox="0 0 28 8" aria-hidden="true"><path d="M0 4h28" stroke="${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}"/></svg>${esc(r.id)} · 복제본 ${esc(r.replicas)}개${r.autoscale_on ? " · 자동 증감 켬" : ""}</span>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="동시 사용자 대 첫 글자 p99">
+    <line class="axis" x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}"/><line class="axis" x1="${L}" x2="${L}" y1="${T}" y2="${Y(0)}"/>
+    <line class="edge" x1="${L}" x2="${W - R}" y1="${Y(1000)}" y2="${Y(1000)}"/><text class="edge-t" x="${W - R}" y="${Y(1000) - 3}" text-anchor="end">▲ 1초</text>
+    <text x="${L - 4}" y="${Y(0)}" text-anchor="end">0</text><text x="${L - 4}" y="${T + 8}" text-anchor="end">${num(top)} ms</text>
+    <text x="${X(users)}" y="${H - 6}" text-anchor="end">동시 사용자 ${num(users)}명</text>${lines}</svg>
+    <div class="legend">${legend}</div><div class="mut">동시 사용자 대 첫 글자 p99 (ms)</div>`;
+}
+
+function renderLoadtests(runs) {
+  const running = runs.find((r) => r.running);
+  $("lt-progress").innerHTML = running
+    ? `<div class="infobox">▲ 진행 중: ${esc(running.id)} · 복제본 ${esc(running.replicas)}개 · 끝낸 단계 ${(running.stages || []).map((x) => `${esc(x.users)}명`).join(", ") || "없음"}</div>`
+    : "";
+  $("lt-start").disabled = Boolean(running);
+  $("lt-chart").innerHTML = loadtestChart(runs);
+  $("lt-list").innerHTML = runs.slice(0, 5).map((r) => {
+    const st = r.error ? badge("bad", "오류: " + r.error) : r.running ? badge("warn", "진행 중")
+      : r.capacity_tpm == null ? badge("mut", "기준 만족 단계 없음") : badge("ok", "완료");
+    const cap = r.capacity_tpm == null ? "-" : `${num(r.capacity_tpm)} 토큰/분`;
+    return `<div class="row" style="margin-top:8px"><b>${esc(r.id)}</b><span class="mut">${dateTimeText(r.created_at)}</span><span>복제본 ${esc(r.replicas)}개 · 자동 증감 ${r.autoscale_on ? "켬" : "끔"}</span><span>${cap}</span>${st}</div>`;
+  }).join("") || emptyState("아직 부하 시험 기록이 없습니다");
+}
+
+function liveConn(ok) {
+  live.lost = !ok;
+  setConn(ok ? "ok" : "bad", ok ? "연결됨" : "연결 끊김");
+  const stale = $("live-stale");
+  stale.hidden = ok;
+  stale.textContent = ok ? "" : "✕ 연결 끊김 · 마지막 값을 보여 줍니다";
+}
+
+async function liveTick() {
+  if (live.busy) return;
+  live.busy = true;
+  try {
+    const snap = await call("/api/live");
+    live.last = snap;
+    $("live-msg").innerHTML = "";
+    renderLive(snap);
+    liveConn(true);
+  } catch (e) {
+    liveConn(false);
+    if (!live.last) $("live-msg").innerHTML = errorBox(e.message);
+  }
+  try {
+    renderLoadtests(await call("/api/loadtests"));
+  } catch (e) {
+    $("lt-list").innerHTML = errorBox(e.message);
+  }
+  live.busy = false;
+}
+
+function liveSchedule() {
+  clearTimeout(live.timer);
+  live.timer = null;
+  if (!live.on || document.hidden) return;
+  live.timer = setTimeout(async () => {
+    await liveTick();
+    liveSchedule();
+  }, LIVE_MS);
+}
+
+async function liveStart() {
+  live.on = true;
+  await liveTick();
+  liveSchedule();
+}
+
+function liveStop() {
+  live.on = false;
+  clearTimeout(live.timer);
+  live.timer = null;
+}
+
+async function liveAct(e) {
+  const t = e.target.closest("[data-act]");
+  if (!t) return;
+  const act = t.dataset.act;
+  try {
+    let r = CANCELLED;
+    if (act === "goto-loadtest") {
+      $("lt-card").scrollIntoView({ block: "start" });
+      $("lt-users").focus();
+      return;
+    }
+    if (act === "open-tenants") {
+      location.hash = "#tenants";
+      return;
+    }
+    if (act === "kill") {
+      r = await mutate(`/api/replicas/${encodeURIComponent(t.dataset.pod)}/delete`, {}, {
+        title: "복제본 끄기",
+        message: `복제본 ${t.dataset.pod} 1개를 삭제합니다. 배포가 새 복제본을 다시 만들지만 준비될 때까지 이 복제본의 용량(약 1/${live.max || "?"})만큼 줄고, 처리 중인 요청은 끊깁니다.`,
+        confirmText: "끄기",
+        danger: true,
+      });
+    } else if (act === "toggle-auto") {
+      const on = !live.enabled;
+      r = await mutate("/api/autoscale", { enabled: on }, {
+        title: on ? "자동 증감 켜기" : "자동 증감 끄기",
+        message: on
+          ? `켜면 사용률에 따라 복제본 수를 1~${live.max}개 사이에서 자동으로 늘리고 줄입니다.`
+          : "끄면 지금 복제본 수를 그대로 유지하고, 늘리거나 줄이는 일은 수동으로만 합니다.",
+        confirmText: on ? "켜기" : "끄기",
+      });
+    } else if (act === "scale") {
+      const n = Number($("live-count").value);
+      r = await mutate("/api/replicas", { count: n }, {
+        title: "복제본 수 조정",
+        message: `vLLM 복제본을 ${n}개로 맞춥니다 (허용 범위 1~${live.max}개). GPU를 ${n}장분 점유하고, 새 복제본은 모델을 불러올 때까지 요청을 받지 못합니다.`,
+        confirmText: "적용",
+      });
+    }
+    if (r !== CANCELLED) {
+      toast("요청했습니다");
+      liveTick();
+    }
+  } catch (err) {
+    toast(err.message, "bad");
+  }
+}
+
+async function startLoadtest() {
+  const users = Number($("lt-users").value), on = $("lt-auto").checked;
+  try {
+    const r = await mutate("/api/loadtest", { max_users: users, autoscale_on: on }, {
+      title: "부하 시험 시작",
+      message: `동시 사용자를 1명부터 최대 ${users}명까지 단계별로 늘리며 단계마다 15초씩 실제 요청을 보냅니다. 지금 떠 있는 복제본 전체가 GPU를 쓰고 일반 요청은 느려질 수 있습니다. ` +
+        (on ? "자동 증감을 켠 채로 시험하므로 결과는 용량 기록에 저장되지 않습니다." : "끝나면 현재 복제본 수의 용량 기록으로 저장됩니다."),
+      confirmText: "시작",
+    });
+    if (r === CANCELLED) return;
+    setMsg("lt-msg", "info", "시작했습니다: " + r.id);
+    liveTick();
+  } catch (err) {
+    setMsg("lt-msg", "err", err.message);
+  }
+}
+
 function initPanels() {
   ensureToastBox();
   const today = new Date(), iso = (d) => d.toISOString().slice(0, 10);
@@ -580,6 +891,14 @@ function initPanels() {
   $("t-rows").addEventListener("change", tenantChange);
   $("u-load").onclick = loadUsage;
   $("u-csv").onclick = downloadCsv;
+  $("panel-live").addEventListener("click", liveAct);
+  $("lt-start").onclick = startLoadtest;
+  document.addEventListener("visibilitychange", () => {
+    if (!live.on) return;
+    if (document.hidden) liveSchedule();
+    else liveStart();
+  });
+  onShow.live = liveStart;
   onShow.overview = loadOverview;
   onShow.cost = loadRunChoices;
   onShow.tenants = loadTenants;

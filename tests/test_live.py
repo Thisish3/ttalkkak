@@ -405,3 +405,16 @@ def test_ui_chip_falls_back_without_gpu():
         raise OSError("no nvidia-smi")
 
     assert _ui_chip(None, boom).name == "nvidia-gpu"
+
+
+def test_snapshot_capacity_carries_the_hour_series_for_the_chart():
+    s = snap(prom_with(good_answers()), [log("acme", 100)], {"acme": 1000})
+    series = s["capacity"]["series"]
+    assert series and all(len(p) == 2 for p in series)
+    assert all(isinstance(t, float) for t, _ in series)
+    assert series[0][1] == pytest.approx(50)
+
+
+def test_snapshot_series_is_empty_when_capacity_unknown():
+    s = snap(down_prom(), [log("acme", 100)], {"acme": 1000})
+    assert s["capacity"]["series"] == []

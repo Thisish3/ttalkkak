@@ -88,6 +88,7 @@ def _headline(prom: Prom, chip: ChipConfig, cost: CostConfig | None, errors: dic
 def _capacity(prom, rec, replicas, model, errors):
     base = utilization(0.0, rec, replicas, model)
     base["period"] = period_summary([])
+    base["series"] = []
     try:
         now_rows = prom.instant(q.TPM)
         if not now_rows:
@@ -99,6 +100,7 @@ def _capacity(prom, rec, replicas, model, errors):
             for _, s in prom.range(q.TPM, 60, 30):
                 series += [(t, v / cap["max_tpm"] * 100) for t, v in s]
         cap["period"] = period_summary(series)
+        cap["series"] = [[t.timestamp(), v] for t, v in sorted(series)]
         return cap
     except PromError as err:
         errors["capacity"] = str(err)

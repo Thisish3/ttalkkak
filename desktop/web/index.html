@@ -16,7 +16,39 @@
   </header>
   <nav class="sidebar" id="nav" aria-label="화면"></nav>
   <main>
-    <section class="panel" id="panel-live" hidden><h1>실시간</h1><div class="empty-state">실시간 화면은 준비 중입니다</div></section>
+    <section class="panel" id="panel-live" hidden>
+      <h1>실시간 <span class="stale" id="live-stale" hidden></span></h1>
+      <div id="live-msg"></div>
+      <div class="card"><header><h2>지금 상태</h2><p>2초마다 갱신합니다. 창이 가려지면 멈춥니다.</p></header>
+        <div class="kv" id="live-head"><span class="skeleton"></span><span class="skeleton"></span></div><div id="live-head-err"></div></div>
+      <div class="card"><header><h2>용량</h2><p>지금 쓰는 양 대비 받을 수 있는 양. 기간 값은 최근 1시간입니다.</p></header>
+        <div class="grid3">
+          <div class="d" id="live-gauge"><span class="skeleton"></span><span class="skeleton"></span></div>
+          <div class="d" id="live-period"><span class="skeleton"></span><span class="skeleton"></span></div>
+          <div class="d" id="live-signals"><span class="skeleton"></span><span class="skeleton"></span></div>
+        </div></div>
+      <div class="card"><header><h2>고객별 한도 소진률</h2><p>고객마다 분당 토큰 한도 중 지금 쓰는 비율. 100 %에 닿으면 그 고객의 요청만 거절됩니다.</p></header>
+        <div id="live-tenants-err"></div>
+        <div class="tablewrap"><table><thead><tr><th>고객</th><th class="num">지금 / 한도 (토큰/분)</th><th>소진률</th><th class="num">최근 1시간 거절</th></tr></thead><tbody id="live-tenants"></tbody></table></div></div>
+      <div class="card"><header><h2>복제본별</h2><p>한 복제본만 먼저 차면 라우팅이 고르지 않다는 신호입니다.</p></header>
+        <div id="live-replicas-err"></div>
+        <div class="tablewrap"><table><thead><tr><th>복제본</th><th>상태</th><th class="num">처리 중 / 대기</th><th>KV 캐시 사용률</th><th class="num">캐시 적중률</th><th class="num">GPU</th><th></th></tr></thead><tbody id="live-replicas"></tbody></table></div></div>
+      <div class="card"><header><h2>권장 조치</h2></header><div id="live-recs"></div></div>
+      <div class="card"><header><h2>자동 증감</h2><p>사용률을 보고 복제본 수를 늘리고 줄입니다. 결정 기록은 최근 10개입니다.</p></header>
+        <div id="live-auto-err"></div>
+        <div class="row" id="live-auto"></div>
+        <div class="tablewrap"><table><thead><tr><th>시각</th><th>결정</th><th class="num">복제본</th><th>이유</th></tr></thead><tbody id="live-decisions"></tbody></table></div></div>
+      <div class="card" id="lt-card"><header><h2>부하 시험</h2><p>단계별로 동시 사용자를 늘려 첫 글자 p99가 1초 이하인 최대 처리량을 잽니다. 실제 요청을 보내 GPU를 씁니다.</p></header>
+        <div class="row">
+          <label class="row">최대 사용자 <input id="lt-users" type="number" min="1" max="100" value="20" style="width:80px" aria-label="최대 사용자"></label>
+          <label class="row"><input id="lt-auto" type="checkbox"> 자동 증감 켠 채로 시험</label>
+          <button class="btn primary" id="lt-start">시작</button>
+        </div>
+        <div id="lt-msg"></div>
+        <div id="lt-progress"></div>
+        <div id="lt-chart"></div>
+        <div id="lt-list"></div></div>
+    </section>
 
     <section class="panel" id="panel-overview" hidden>
       <h1>개요</h1>
