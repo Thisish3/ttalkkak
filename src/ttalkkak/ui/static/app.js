@@ -136,7 +136,7 @@ function toast(message, kind = "ok") {
   setTimeout(() => el.remove(), 5000);
 }
 
-function openModal(card, titleEl, initial, onClose) {
+function openModal(card, titleEl, initial, onClose, { persistent = false } = {}) {
   const back = document.createElement("div");
   back.className = "modal";
   titleEl.id = "modal-title";
@@ -155,7 +155,7 @@ function openModal(card, titleEl, initial, onClose) {
   const onKey = (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      close();
+      if (!persistent) close();
     } else if (e.key === "Tab") {
       const f = focusable();
       if (!f.length) return;
@@ -466,8 +466,8 @@ async function addTenant() {
 function showKey(key) {
   const card = document.createElement("div");
   card.className = "card";
-  card.innerHTML = `<h2>새 API 키</h2><p>창을 닫으면 다시 볼 수 없습니다. 지금 저장하세요.</p>
-    <div class="secret"></div><div class="actions" style="margin-top:12px"><button class="btn secondary">복사</button><button class="btn primary">닫기</button></div>`;
+  card.innerHTML = `<h2>새 API 키</h2><p>▲ 이 키는 다시 볼 수 없습니다. 복사해서 안전한 곳에 저장한 뒤 닫으세요.</p>
+    <div class="secret"></div><div class="actions" style="margin-top:12px"><button class="btn secondary">복사</button><button class="btn primary">복사했습니다, 닫기</button></div>`;
   const text = card.querySelector(".secret");
   text.textContent = key;
   const [copy, done] = card.querySelectorAll("button");
@@ -475,7 +475,7 @@ function showKey(key) {
   const close = openModal(card, card.querySelector("h2"), done, () => {
     text.textContent = "";
     loadTenants();
-  });
+  }, { persistent: true });
   done.onclick = close;
 }
 

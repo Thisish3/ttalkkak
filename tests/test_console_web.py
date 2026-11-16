@@ -108,3 +108,13 @@ def test_csv_in_the_app_goes_through_the_rust_command():
     assert 'invoke("save_csv"' in js
     rs = (ROOT / "desktop/src-tauri/src/main.rs").read_text(encoding="utf-8")
     assert "save_csv," in rs or "save_csv\n" in rs
+
+
+def test_key_modal_ignores_escape_and_has_explicit_close():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "persistent" in js[js.index("function openModal(") :].split("\n}\n")[0]
+    show_key = js[js.index("function showKey(") :].split("\n}\n")[0]
+    assert "persistent: true" in show_key
+    assert "복사했습니다, 닫기" in show_key and "다시 볼 수 없습니다" in show_key
+    confirm = js[js.index("function confirmDialog(") :].split("\n}\n")[0]
+    assert "persistent" not in confirm
