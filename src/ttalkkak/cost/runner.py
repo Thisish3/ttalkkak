@@ -36,11 +36,15 @@ def guidellm_cmd(
     out: Path,
     streams: list[int],
     max_seconds: int,
+    api_key: str | None = None,
 ) -> list[str]:
     target = base_url.removesuffix("/v1")
+    backend = f"kind=openai_http,target={target},model={model}"
+    if api_key:
+        backend += f",api_key={api_key}"
     return [
         "guidellm", "run",
-        "--backend", f"kind=openai_http,target={target},model={model}",
+        "--backend", backend,
         "--profile", "kind=concurrent",
         "--override", "profile.streams", ",".join(map(str, streams)),
         "--constraint", f"kind=max_duration,seconds={max_seconds}",
@@ -72,6 +76,23 @@ def parse_points(report: dict) -> list[Point]:
             )
         )
     return sorted(pts, key=lambda p: p.streams)
+
+
+def parse_stage_load(benchmark: dict) -> tuple[float, float]:
+    """(tokens_per_min, error_rate) of one guidellm benchmark (stage)."""
+    m = benchmark["metrics"]
+
+    def total(key: str) -> float:
+        return float(m[key]["successful"]["total_sum"])
+
+    seconds = float(benchmark["duration"])
+    tokens = total("prompt_token_count") + total("output_token_count")
+    counts = m["request_totals"]
+    requests = counts["total"]
+    return (
+        tokens / seconds * 60 if seconds > 0 else 0.0,
+        counts["errored"] / requests if requests else 1.0,
+    )
 
 
 def parse_energy_run(report: dict, samples: list[Sample]) -> EnergyRun:

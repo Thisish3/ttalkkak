@@ -34,6 +34,7 @@ class UiDeps:
     chip: object | None = None
     cost_config: object | None = None
     namespace: str = "ttalkkak"
+    gateway_url: str = ""
 
 
 def allowed_hosts(extra: Iterable[str] = ()) -> frozenset[str]:

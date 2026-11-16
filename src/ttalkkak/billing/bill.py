@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from ttalkkak.capacity import LOADTEST_TENANT
 from ttalkkak.cost.model import MTOK, Prices
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.tenants.store import TENANT_ID
@@ -61,13 +62,16 @@ def read_log(lines: Iterable[str], stats: dict | None = None) -> Iterator[dict]:
 def billable(records: Iterable[dict], start: datetime, end: datetime) -> Iterator[dict]:
     """Records in [start, end) worth billing, deduplicated per (tenant, request_id).
 
-    Skips 5xx, requests rejected by auth and records without a valid tenant.
+    Skips 5xx, requests rejected by auth, records without a valid tenant and
+    the load-test tenant.
     """
     seen = set()
     for r in records:
         if not start <= r["ts"] < end or r["status"] >= 500:
             continue
         if r["status"] in REJECTED or not TENANT_ID.match(r["tenant"]):
+            continue
+        if r["tenant"] == LOADTEST_TENANT:
             continue
         if r["request_id"]:
             key = (r["tenant"], r["request_id"])

@@ -83,3 +83,60 @@ def test_usage_and_invoice_csv(c):
 def test_ops_endpoints_keep_local_only_guard(c):
     r = c.post("/api/ops/tenants", content="{}", headers={"content-type": "text/plain"})
     assert r.status_code == 415
+
+
+class Kc:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, args, input=None):
+        self.calls.append(args)
+        from types import SimpleNamespace
+
+        out = ""
+        if args[:2] == ["get", "configmap"]:
+            out = json.dumps({"data": {
+                "deployment": "vllm-qwen", "max_replicas": "3", "enabled": "true",
+            }})  # fmt: skip
+        return SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+
+@pytest.fixture
+def cc(tmp_path):
+    kc = Kc()
+    deps = UiDeps(
+        list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
+        cluster_status=lambda: [
+            {"name": "vllm-qwen-abc", "ready": "1/1", "restarts": 0, "phase": "Running"},
+            {"name": "gateway-xyz", "ready": "1/1", "restarts": 0, "phase": "Running"},
+        ],
+        kubectl=kc,
+    )  # fmt: skip
+    return TestClient(create_app(tmp_path, deps, frozenset({"testserver"}))), kc
+
+
+def test_scale_route_bounds(cc):
+    c, kc = cc
+    assert post(c, "/api/replicas", {"count": 0}).status_code == 400
+    assert post(c, "/api/replicas", {"count": 4}).status_code == 400
+    assert post(c, "/api/replicas", {"count": "x"}).status_code == 400
+    assert post(c, "/api/replicas", {"count": 2}).status_code == 200
+    assert [
+        "scale", "deployment/vllm-qwen", "--replicas=2", "-n", "ttalkkak"
+    ] in kc.calls  # fmt: skip
+
+
+def test_delete_pod_rejects_foreign_name(cc):
+    c, kc = cc
+    assert post(c, "/api/replicas/gateway-xyz/delete").status_code == 400
+    assert post(c, "/api/replicas/Bad_Name/delete").status_code in (400, 404)
+    assert post(c, "/api/replicas/vllm-qwen-abc/delete").status_code == 200
+    assert ["delete", "pod", "vllm-qwen-abc", "-n", "ttalkkak"] in kc.calls
+    assert not any("gateway-xyz" in a for a in kc.calls)
+
+
+def test_loadtest_routes_need_gateway(cc):
+    c, _ = cc
+    assert post(c, "/api/loadtest", {"max_users": 5}).status_code == 503
+    assert c.get("/api/loadtests").json() == []
+    assert c.get("/api/loadtest/nope").status_code == 404

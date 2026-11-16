@@ -18,10 +18,12 @@ from ttalkkak.capacity import CapacityRecord
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
+from ttalkkak.live.loadtest import LoadTestRunner
 from ttalkkak.live.prom import PromError
 from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
 
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
+POD_NAME = re.compile(r"^[a-z0-9-]+$")
 CONFIG_TTL_S = 10.0
 
 
@@ -213,6 +215,109 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
     async def live(request):
         return JSONResponse(await run_in_threadpool(live_snapshot))
 
+    def autoscale_config() -> tuple[str, int]:
+        auto = configmap("ttalkkak-autoscale")
+        deployment = (auto or {}).get("deployment") or ""
+        limit = str((auto or {}).get("max_replicas", ""))
+        if not deployment or not limit.isdigit():
+            raise TtalkkakError(
+                "ttalkkak-autoscale 설정을 읽지 못했습니다 (배포 이름과 최대 복제본 수)",
+                503,
+            )
+        return deployment, int(limit)
+
+    def kube(args: list[str]) -> None:
+        if deps.kubectl is None:
+            raise TtalkkakError("클러스터 연결 없음", 503)
+        r = deps.kubectl(args)
+        if r.returncode != 0:
+            lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
+            why = lines[-1].strip() if lines else f"exit {r.returncode}"
+            raise TtalkkakError(f"kubectl이 실패했습니다: {why}", 502)
+
+    @guarded
+    async def scale(request):
+        b = await body(request)
+        count = b.get("count")
+        deployment, limit = await run_in_threadpool(autoscale_config)
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise TtalkkakError("count는 정수입니다", 400)
+        if not 1 <= count <= limit:
+            raise TtalkkakError(f"복제본 수는 1~{limit}이어야 합니다", 400)
+        await run_in_threadpool(
+            kube,
+            ["scale", f"deployment/{deployment}", f"--replicas={count}",
+             "-n", deps.namespace],
+        )  # fmt: skip
+        cache.pop("ttalkkak-autoscale", None)
+        return JSONResponse({"ok": True, "count": count})
+
+    @guarded
+    async def delete_pod(request):
+        pod = request.path_params["pod"]
+        deployment, _ = await run_in_threadpool(autoscale_config)
+        pods = (
+            await run_in_threadpool(deps.cluster_status) if deps.cluster_status else []
+        )
+        if not POD_NAME.match(pod) or pod not in {
+            p["name"] for p in pods if p["name"].startswith(f"{deployment}-")
+        }:
+            raise TtalkkakError("vLLM 파드가 아닙니다", 400)
+        await run_in_threadpool(kube, ["delete", "pod", pod, "-n", deps.namespace])
+        return JSONResponse({"ok": True})
+
+    runner_box: list[LoadTestRunner] = []
+
+    def loadtests(start: bool = False) -> LoadTestRunner:
+        if start and not deps.gateway_url:
+            raise TtalkkakError(
+                "게이트웨이 주소가 설정되지 않았습니다 (--gateway-url)", 503
+            )
+        if not runner_box:
+            runner_box.append(
+                LoadTestRunner(
+                    root, deps.store, deps.gateway_url, "",
+                    kubectl=deps.kubectl, namespace=deps.namespace,
+                )
+            )  # fmt: skip
+        return runner_box[0]
+
+    def start_loadtest(b: dict) -> str:
+        store()
+        runner = loadtests(start=True)
+        deployment, _ = autoscale_config()
+        pods = deps.cluster_status() if deps.cluster_status else []
+        replicas = sum(
+            1 for p in pods
+            if p["name"].startswith(f"{deployment}-") and p["phase"] == "Running"
+        )  # fmt: skip
+        model = ""
+        try:
+            rows = ShortCircuit(deps.prometheus or _NoProm()).instant(live_prom.RUNNING)
+            model = next((m["model_name"] for m, _ in rows if m.get("model_name")), "")
+        except PromError:
+            pass
+        if not model or replicas < 1:
+            raise TtalkkakError("실행 중인 vLLM 모델을 찾지 못했습니다", 503)
+        runner.model = model
+        users, on = b.get("max_users"), b.get("autoscale_on", False)
+        if not isinstance(users, int) or not isinstance(on, bool):
+            raise TtalkkakError("max_users는 정수, autoscale_on은 불리언입니다", 400)
+        return runner.start(users, replicas, on)
+
+    @guarded
+    async def loadtest_start(request):
+        b = await body(request)
+        return JSONResponse({"id": await run_in_threadpool(start_loadtest, b)})
+
+    @guarded
+    async def loadtest_status(request):
+        return JSONResponse(loadtests().status(request.path_params["tid"]))
+
+    @guarded
+    async def loadtest_list(request):
+        return JSONResponse(await run_in_threadpool(loadtests().list))
+
     @guarded
     async def cost(request):
         c = cost_of(request.query_params.get("run"))
@@ -267,6 +372,11 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
 
     return [
         Route("/api/live", live),
+        Route("/api/loadtest", loadtest_start, methods=["POST"]),
+        Route("/api/loadtest/{tid}", loadtest_status),
+        Route("/api/loadtests", loadtest_list),
+        Route("/api/replicas", scale, methods=["POST"]),
+        Route("/api/replicas/{pod}/delete", delete_pod, methods=["POST"]),
         Route("/api/ops/status", status),
         Route("/api/ops/cost", cost),
         Route("/api/ops/tenants", tenants, methods=["GET", "POST"]),

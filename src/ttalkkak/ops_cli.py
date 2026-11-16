@@ -138,6 +138,9 @@ def ui(
     ),
     allow_host: list[str] = ALLOW_HOST_OPT,
     namespace: str = typer.Option("ttalkkak", help="클러스터 네임스페이스"),
+    gateway_url: str = typer.Option(
+        "", help="부하 시험이 두드릴 게이트웨이 주소 (예: http://127.0.0.1:8080/v1)"
+    ),
 ) -> None:
     """Open the local web UI (model search, run, report, export)."""
     _need_extra("uvicorn", "huggingface_hub", "starlette")
@@ -180,6 +183,7 @@ def ui(
         chip=chip_cfg,
         cost_config=CostConfig(),
         namespace=namespace,
+        gateway_url=gateway_url,
     )
     typer.echo(f"ttalkkak ui: http://{host}:{port}")
     uvicorn.run(

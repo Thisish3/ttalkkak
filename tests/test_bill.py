@@ -151,3 +151,14 @@ def test_discounts_must_be_between_0_and_1():
 
     with pytest.raises(TtalkkakError):
         invoice_rows(aggregate(read_log(lines()), *NOV), PRICES, {"acme": 1.5})
+
+
+def test_bill_excludes_loadtest_tenant():
+    from ttalkkak.capacity import LOADTEST_TENANT
+
+    logs = [
+        json.dumps(rec("2026-11-01T00:00:00.000Z", "x1", LOADTEST_TENANT)),
+        json.dumps(rec("2026-11-01T00:00:00.000Z", "x2", "acme")),
+    ]
+    u = {x.tenant for x in aggregate(read_log(logs), *NOV)}
+    assert u == {"acme"}
