@@ -320,4 +320,4 @@ def test_ops_serve_runs_exactly_one_replica(store):
     _, d = docs(store)
     (dep,) = kind(d, "25-ops-serve.yaml", "Deployment")
     assert dep["spec"]["replicas"] == 1
-    assert dep["spec"].get("strategy", {}).get("type") in (None, "Recreate")
+    assert dep["spec"]["strategy"] == {"type": "Recreate"}

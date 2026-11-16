@@ -663,6 +663,7 @@ def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
             "metadata": _meta(OPS_SERVICE, ns, **labels),
             "spec": {
                 "replicas": 1,
+                "strategy": {"type": "Recreate"},
                 "selector": {"matchLabels": labels},
                 "template": {
                     "metadata": {
