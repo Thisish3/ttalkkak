@@ -29,7 +29,7 @@
     const token = $("token").value.trim();
     try {
       await pingServer(url, token, $("clear-ok").checked);
-      await tauri.invoke("save_connection", { url, token });
+      await tauri.invoke("save_connection", { url, token, allowCleartext: $("clear-ok").checked });
       const conn = await loadConnection();
       if (conn && conn.token_storage === "file") {
         $("warn").textContent = "▲ 키체인을 쓸 수 없어 토큰을 설정 파일(권한 0600)에 저장했습니다";

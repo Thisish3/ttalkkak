@@ -57,6 +57,8 @@ struct Stored {
     token_storage: TokenStorage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     token: Option<String>,
+    #[serde(default)]
+    cleartext_ok: bool,
 }
 
 impl std::fmt::Debug for Stored {
@@ -65,6 +67,7 @@ impl std::fmt::Debug for Stored {
             .field("url", &self.url)
             .field("token_storage", &self.token_storage)
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .field("cleartext_ok", &self.cleartext_ok)
             .finish()
     }
 }
@@ -74,6 +77,7 @@ impl std::fmt::Debug for Stored {
 pub struct Connection {
     pub url: String,
     pub token_storage: TokenStorage,
+    pub cleartext_ok: bool,
 }
 
 pub fn normalize_url(raw: &str) -> Result<String, String> {
@@ -143,8 +147,20 @@ fn write_private(file: &Path, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn save(dir: &Path, store: &dyn SecretStore, url: &str, token: &str) -> Result<(), String> {
+const CLEARTEXT_REFUSED: &str =
+    "암호화되지 않은 주소(http://)로 토큰을 보내려면 위험을 확인했다는 동의가 필요합니다";
+
+pub fn save(
+    dir: &Path,
+    store: &dyn SecretStore,
+    url: &str,
+    token: &str,
+    allow_cleartext: bool,
+) -> Result<(), String> {
     let url = normalize_url(url)?;
+    if cleartext_risk(&url) && !allow_cleartext {
+        return Err(CLEARTEXT_REFUSED.into());
+    }
     let token = token.trim();
     if token.is_empty() {
         return Err("운영자 토큰이 비어 있습니다".into());
@@ -155,6 +171,7 @@ pub fn save(dir: &Path, store: &dyn SecretStore, url: &str, token: &str) -> Resu
             url,
             token_storage: TokenStorage::Keychain,
             token: None,
+            cleartext_ok: allow_cleartext,
         },
         Err(e) => {
             eprintln!("경고: OS 키체인에 토큰을 저장하지 못해 설정 파일에 저장합니다 ({e})");
@@ -162,6 +179,7 @@ pub fn save(dir: &Path, store: &dyn SecretStore, url: &str, token: &str) -> Resu
                 url,
                 token_storage: TokenStorage::File,
                 token: Some(token.to_string()),
+                cleartext_ok: allow_cleartext,
             }
         }
     };
@@ -177,17 +195,22 @@ pub fn load(dir: &Path) -> Option<Connection> {
     read(dir).map(|s| Connection {
         url: s.url,
         token_storage: s.token_storage,
+        cleartext_ok: s.cleartext_ok,
     })
 }
 
-/// Address and token for Rust-side HTTP calls.
-pub fn load_with_token(dir: &Path, store: &dyn SecretStore) -> Option<(String, String)> {
-    let s = read(dir)?;
+/// Address and token for Rust-side HTTP calls; refuses an unconsented risky http:// address.
+pub fn load_with_token(dir: &Path, store: &dyn SecretStore) -> Result<(String, String), String> {
+    let s = read(dir).ok_or_else(|| "저장된 서버 연결이 없습니다".to_string())?;
+    if cleartext_risk(&s.url) && !s.cleartext_ok {
+        return Err(CLEARTEXT_REFUSED.into());
+    }
     let token = match s.token_storage {
-        TokenStorage::File => s.token?,
-        TokenStorage::Keychain => store.get().ok()??,
+        TokenStorage::File => s.token,
+        TokenStorage::Keychain => store.get().ok().flatten(),
     };
-    Some((s.url, token))
+    let token = token.ok_or_else(|| "저장된 토큰을 읽지 못했습니다".to_string())?;
+    Ok((s.url, token))
 }
 
 pub fn forget(dir: &Path, store: &dyn SecretStore) -> Result<(), String> {
@@ -210,10 +233,9 @@ pub struct Session {
 }
 
 impl Session {
-    fn clear(&self) {
-        if let Ok(mut c) = self.cache.lock() {
-            *c = None;
-        }
+    /// The lock is held across the change, so a concurrent read cannot re-cache the old token.
+    fn locked(&self) -> std::sync::MutexGuard<'_, Option<(String, String)>> {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn save(
@@ -222,22 +244,38 @@ impl Session {
         store: &dyn SecretStore,
         url: &str,
         token: &str,
+        allow_cleartext: bool,
     ) -> Result<(), String> {
-        self.clear();
-        save(dir, store, url, token)
+        let mut c = self.locked();
+        *c = None;
+        let r = save(dir, store, url, token, allow_cleartext);
+        *c = None;
+        r
     }
 
     pub fn forget(&self, dir: &Path, store: &dyn SecretStore) -> Result<(), String> {
-        self.clear();
-        forget(dir, store)
+        let mut c = self.locked();
+        *c = None;
+        let r = forget(dir, store);
+        *c = None;
+        r
     }
 
-    pub fn credentials(&self, dir: &Path, store: &dyn SecretStore) -> Option<(String, String)> {
-        let mut c = self.cache.lock().ok()?;
+    pub fn credentials(
+        &self,
+        dir: &Path,
+        store: &dyn SecretStore,
+    ) -> Result<(String, String), String> {
+        let mut c = self.locked();
         if c.is_none() {
-            *c = load_with_token(dir, store);
+            *c = Some(load_with_token(dir, store)?);
         }
-        c.clone()
+        let (url, token) = c.clone().expect("cache just filled");
+        if cleartext_risk(&url) && !load(dir).is_some_and(|x| x.cleartext_ok) {
+            *c = None;
+            return Err(CLEARTEXT_REFUSED.into());
+        }
+        Ok((url, token))
     }
 }
 
@@ -299,7 +337,7 @@ mod tests {
     fn keychain_roundtrip_keeps_token_out_of_file() {
         let d = tempfile::tempdir().unwrap();
         let k = Fake::default();
-        save(d.path(), &k, "http://100.64.0.1:8787/", " ttk_op_x ").unwrap();
+        save(d.path(), &k, "http://100.64.0.1:8787/", " ttk_op_x ", false).unwrap();
         let raw = fs::read_to_string(d.path().join("connection.json")).unwrap();
         assert!(!raw.contains("ttk_op_x"));
         let c = load(d.path()).unwrap();
@@ -307,7 +345,7 @@ mod tests {
         assert_eq!(c.token_storage, TokenStorage::Keychain);
         assert_eq!(
             load_with_token(d.path(), &k),
-            Some(("http://100.64.0.1:8787".into(), "ttk_op_x".into()))
+            Ok(("http://100.64.0.1:8787".into(), "ttk_op_x".into()))
         );
     }
 
@@ -318,7 +356,7 @@ mod tests {
             broken: true,
             ..Default::default()
         };
-        save(d.path(), &k, "https://h.example:9", "ttk_op_y").unwrap();
+        save(d.path(), &k, "https://h.example:9", "ttk_op_y", true).unwrap();
         assert_eq!(load(d.path()).unwrap().token_storage, TokenStorage::File);
         assert_eq!(load_with_token(d.path(), &k).unwrap().1, "ttk_op_y");
     }
@@ -332,7 +370,7 @@ mod tests {
             broken: true,
             ..Default::default()
         };
-        save(d.path(), &k, "http://h:1", "t").unwrap();
+        save(d.path(), &k, "http://h:1", "t", true).unwrap();
         let mode = fs::metadata(d.path().join("connection.json"))
             .unwrap()
             .permissions()
@@ -344,7 +382,7 @@ mod tests {
     fn forget_removes_file_and_secret() {
         let d = tempfile::tempdir().unwrap();
         let k = Fake::default();
-        save(d.path(), &k, "http://h:1", "t").unwrap();
+        save(d.path(), &k, "http://h:1", "t", true).unwrap();
         forget(d.path(), &k).unwrap();
         assert!(load(d.path()).is_none());
         assert!(k.secret.borrow().is_none());
@@ -355,9 +393,9 @@ mod tests {
     fn rejects_bad_input() {
         let d = tempfile::tempdir().unwrap();
         let k = Fake::default();
-        assert!(save(d.path(), &k, "ftp://h", "t").is_err());
-        assert!(save(d.path(), &k, "http://h:1/api", "t").is_err());
-        assert!(save(d.path(), &k, "http://h:1", "  ").is_err());
+        assert!(save(d.path(), &k, "ftp://h", "t", true).is_err());
+        assert!(save(d.path(), &k, "http://h:1/api", "t", true).is_err());
+        assert!(save(d.path(), &k, "http://h:1", "  ", true).is_err());
         assert!(load(d.path()).is_none());
     }
 
@@ -374,7 +412,7 @@ mod tests {
             broken: true,
             ..Default::default()
         };
-        save(d.path(), &k, "http://h:1", "tok").unwrap();
+        save(d.path(), &k, "http://h:1", "tok", true).unwrap();
         assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
         let meta = fs::symlink_metadata(d.path().join("connection.json")).unwrap();
         assert!(meta.file_type().is_file());
@@ -393,7 +431,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let d = tempfile::tempdir().unwrap();
         let sub = d.path().join("cfg");
-        save(&sub, &Fake::default(), "http://h:1", "t").unwrap();
+        save(&sub, &Fake::default(), "http://h:1", "t", true).unwrap();
         assert_eq!(
             fs::metadata(&sub).unwrap().permissions().mode() & 0o777,
             0o700
@@ -409,7 +447,7 @@ mod tests {
             broken: true,
             ..Default::default()
         };
-        save(d.path(), &broken, "http://h:1", "t").unwrap();
+        save(d.path(), &broken, "http://h:1", "t", true).unwrap();
         forget(d.path(), &k).unwrap();
         assert!(k.secret.borrow().is_none());
         assert!(load(d.path()).is_none());
@@ -421,6 +459,7 @@ mod tests {
             url: "http://h:1".into(),
             token_storage: TokenStorage::File,
             token: Some("ttk_op_secret".into()),
+            cleartext_ok: false,
         };
         assert!(!format!("{s:?}").contains("ttk_op_secret"));
     }
@@ -455,14 +494,14 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let k = Counting(Fake::default(), Cell::new(0));
         let s = Session::default();
-        s.save(d.path(), &k, "http://h:1", "one").unwrap();
+        s.save(d.path(), &k, "http://h:1", "one", true).unwrap();
         assert_eq!(s.credentials(d.path(), &k).unwrap().1, "one");
         assert_eq!(s.credentials(d.path(), &k).unwrap().1, "one");
         assert_eq!(k.1.get(), 1);
-        s.save(d.path(), &k, "http://h:1", "two").unwrap();
+        s.save(d.path(), &k, "http://h:1", "two", true).unwrap();
         assert_eq!(s.credentials(d.path(), &k).unwrap().1, "two");
         s.forget(d.path(), &k).unwrap();
-        assert!(s.credentials(d.path(), &k).is_none());
+        assert!(s.credentials(d.path(), &k).is_err());
     }
 
     #[test]
@@ -489,5 +528,90 @@ mod tests {
         ] {
             assert!(cleartext_risk(risky), "{risky}");
         }
+    }
+
+    #[test]
+    fn save_refuses_risky_http_without_consent_and_stores_consent() {
+        let d = tempfile::tempdir().unwrap();
+        let k = Fake::default();
+        let err = save(d.path(), &k, "http://192.168.1.5:8787", "t", false).unwrap_err();
+        assert!(err.contains("암호화"), "{err}");
+        assert!(load(d.path()).is_none());
+        assert!(k.secret.borrow().is_none());
+        save(d.path(), &k, "http://192.168.1.5:8787", "t", true).unwrap();
+        let raw = fs::read_to_string(d.path().join("connection.json")).unwrap();
+        assert!(raw.contains("\"cleartext_ok\": true"), "{raw}");
+        assert!(load_with_token(d.path(), &k).is_ok());
+        save(d.path(), &k, "https://h.example", "t", false).unwrap();
+        assert!(load_with_token(d.path(), &k).is_ok());
+    }
+
+    #[test]
+    fn hand_edited_risky_url_without_consent_is_refused_on_every_call() {
+        let d = tempfile::tempdir().unwrap();
+        let k = Fake::default();
+        save(d.path(), &k, "http://100.64.0.1:8787", "t", false).unwrap();
+        fs::write(
+            d.path().join("connection.json"),
+            r#"{"url":"http://192.168.1.5:8787","token_storage":"keychain"}"#,
+        )
+        .unwrap();
+        let err = load_with_token(d.path(), &k).unwrap_err();
+        assert!(err.contains("암호화"), "{err}");
+        let s = Session::default();
+        assert!(s.credentials(d.path(), &k).is_err());
+        assert!(s.credentials(d.path(), &k).is_err());
+    }
+
+    #[test]
+    fn save_racing_a_credentials_read_never_leaves_the_old_token_cached() {
+        use std::sync::mpsc::channel;
+        use std::sync::Mutex;
+        use std::time::Duration;
+        struct Gated {
+            secret: Mutex<Option<String>>,
+            entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+            release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+        }
+        impl SecretStore for Gated {
+            fn set(&self, s: &str) -> Result<(), String> {
+                if let Some(tx) = self.entered.lock().unwrap().take() {
+                    tx.send(()).unwrap();
+                    let rx = self.release.lock().unwrap().take().unwrap();
+                    rx.recv().unwrap();
+                }
+                *self.secret.lock().unwrap() = Some(s.into());
+                Ok(())
+            }
+            fn get(&self) -> Result<Option<String>, String> {
+                Ok(self.secret.lock().unwrap().clone())
+            }
+            fn delete(&self) -> Result<(), String> {
+                *self.secret.lock().unwrap() = None;
+                Ok(())
+            }
+        }
+        let d = tempfile::tempdir().unwrap();
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        let store = Gated {
+            secret: Mutex::new(None),
+            entered: Mutex::new(None),
+            release: Mutex::new(None),
+        };
+        let s = Session::default();
+        s.save(d.path(), &store, "http://h:1", "one", true).unwrap();
+        *store.entered.lock().unwrap() = Some(entered_tx);
+        *store.release.lock().unwrap() = Some(release_rx);
+        std::thread::scope(|sc| {
+            let saver = sc.spawn(|| s.save(d.path(), &store, "http://h:1", "two", true));
+            entered_rx.recv().unwrap();
+            let reader = sc.spawn(|| s.credentials(d.path(), &store));
+            std::thread::sleep(Duration::from_millis(100));
+            release_tx.send(()).unwrap();
+            saver.join().unwrap().unwrap();
+            let _ = reader.join().unwrap();
+        });
+        assert_eq!(s.credentials(d.path(), &store).unwrap().1, "two");
     }
 }

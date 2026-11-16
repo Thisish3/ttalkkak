@@ -19,6 +19,7 @@ pub fn check_path(path: &str) -> Result<(), String> {
     let route = path.split('?').next().unwrap_or(path).to_ascii_lowercase();
     let encoded = ["%2e", "%2f", "%5c"].iter().any(|e| route.contains(e));
     let ok = !encoded
+        && !path.chars().any(|c| c.is_control() || c.is_whitespace())
         && path.starts_with("/api/")
         && !path.starts_with("/api//")
         && !path.contains(['\\', '@', '#'])
@@ -132,6 +133,20 @@ mod tests {
             assert!(check_path(bad).is_err(), "{bad}");
         }
         assert!(check_path("/api/runs?q=%ED%95%9C").is_ok());
+    }
+
+    #[test]
+    fn control_characters_and_whitespace_are_refused() {
+        for bad in [
+            "/api/.\t./x",
+            "/api/a\nb",
+            "/api/a\rb",
+            "/api/a b",
+            "/api/a\u{0}b",
+            "/api/a\u{7f}b",
+        ] {
+            assert!(check_path(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

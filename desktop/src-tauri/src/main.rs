@@ -20,8 +20,9 @@ fn save_connection(
     session: tauri::State<Session>,
     url: String,
     token: String,
+    allow_cleartext: bool,
 ) -> Result<(), String> {
-    session.save(&config_dir(&app)?, &Keychain, &url, &token)
+    session.save(&config_dir(&app)?, &Keychain, &url, &token, allow_cleartext)
 }
 
 #[tauri::command]
@@ -65,9 +66,7 @@ async fn api_request(
     body: Option<String>,
 ) -> Result<http::ApiResponse, String> {
     let dir = config_dir(&app)?;
-    let (base, token) = session
-        .credentials(&dir, &Keychain)
-        .ok_or_else(|| "저장된 서버 연결이 없습니다".to_string())?;
+    let (base, token) = session.credentials(&dir, &Keychain)?;
     http::send(&base, &token, &method.to_uppercase(), &path, body).await
 }
 
