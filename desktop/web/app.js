@@ -38,7 +38,7 @@ let panelsReady = false;
 
 function showPanel() {
   const nav = document.getElementById("nav");
-  const id = NAV.some((n) => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : "live";
+  const id = NAV.some((n) => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : "runs";
   document.querySelectorAll(".panel").forEach((p) => (p.hidden = p.id !== "panel-" + id));
   nav.querySelectorAll("a").forEach((a) =>
     a.dataset.panel === id ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")
@@ -109,12 +109,13 @@ const BADGE_ICON = { ok: "●", warn: "▲", bad: "✕", mut: "–" };
 const badge = (kind, text) => `<span class="badge ${kind}">${BADGE_ICON[kind]} ${esc(text)}</span>`;
 const errorBox = (msg) => `<div class="errbox inline" role="alert">✕ ${esc(msg)}</div>`;
 const emptyState = (msg) => `<div class="empty-state">${esc(msg)}</div>`;
-const skeleton = (n = 3) => '<span class="skeleton"></span>'.repeat(n);
+const skeleton = (n = 3) =>
+  `<span aria-busy="true" aria-label="불러오는 중">${'<span class="skeleton"></span>'.repeat(n)}</span>`;
 const skeletonRows = (cols, n = 3) =>
   `<tr><td colspan="${cols}">${skeleton(n)}</td></tr>`;
 const rowMessage = (cols, html) => `<tr><td colspan="${cols}">${html}</td></tr>`;
 
-function toast(message, kind = "ok") {
+function ensureToastBox() {
   let box = $("toasts");
   if (!box) {
     box = document.createElement("div");
@@ -123,6 +124,11 @@ function toast(message, kind = "ok") {
     box.setAttribute("role", "status");
     document.body.append(box);
   }
+  return box;
+}
+
+function toast(message, kind = "ok") {
+  const box = ensureToastBox();
   const el = document.createElement("div");
   el.className = "toast " + kind;
   el.textContent = `${BADGE_ICON[kind] || ""} ${message}`;
@@ -130,14 +136,52 @@ function toast(message, kind = "ok") {
   setTimeout(() => el.remove(), 5000);
 }
 
+function openModal(card, titleEl, initial, onClose) {
+  const back = document.createElement("div");
+  back.className = "modal";
+  titleEl.id = "modal-title";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-labelledby", "modal-title");
+  back.append(card);
+  const opener = document.activeElement;
+  const focusable = () => [...card.querySelectorAll("button, input, select, textarea, [href]")].filter((e) => !e.disabled);
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    back.remove();
+    if (opener && opener.focus) opener.focus();
+    onClose();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    } else if (e.key === "Tab") {
+      const f = focusable();
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (!card.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  document.addEventListener("keydown", onKey);
+  document.body.append(back);
+  initial.focus();
+  return close;
+}
+
 function confirmDialog({ title, message, confirmText = "확인", danger = false }) {
   return new Promise((resolve) => {
-    const back = document.createElement("div");
-    back.className = "modal";
     const card = document.createElement("div");
     card.className = "card";
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-modal", "true");
     const h = document.createElement("h2");
     h.textContent = title;
     const p = document.createElement("p");
@@ -152,18 +196,13 @@ function confirmDialog({ title, message, confirmText = "확인", danger = false 
     ok.textContent = confirmText;
     actions.append(cancel, ok);
     card.append(h, p, actions);
-    back.append(card);
-    const done = (v) => {
-      document.removeEventListener("keydown", onKey);
-      back.remove();
-      resolve(v);
+    let answer = false;
+    const close = openModal(card, h, cancel, () => resolve(answer));
+    cancel.onclick = close;
+    ok.onclick = () => {
+      answer = true;
+      close();
     };
-    const onKey = (e) => e.key === "Escape" && done(false);
-    document.addEventListener("keydown", onKey);
-    cancel.onclick = () => done(false);
-    ok.onclick = () => done(true);
-    document.body.append(back);
-    cancel.focus();
   });
 }
 
@@ -218,13 +257,14 @@ async function loadGpu() {
 }
 
 async function loadSkills() {
-  $("skills").innerHTML = skeleton();
+  const checked = new Set([...document.querySelectorAll("#skills input:checked")].map((x) => x.value));
+  if (!checked.size) $("skills").innerHTML = skeleton();
   try {
     const rows = await call("/api/skills");
     $("skills").innerHTML = rows.map((s) => {
       const req = Object.entries(s.requires || {}).filter(([, v]) => v).map(([k]) => `<span class="tag">${esc(k)}</span>`).join("");
       const ctx = s.min_context ? `<span class="tag">context ≥ ${fmt(s.min_context)}</span>` : "";
-      return `<label class="tile"><input type="checkbox" value="${esc(s.name)}"> <b>${esc(s.name)}</b><p>${esc(s.description)}</p><div>${req}${ctx}</div></label>`;
+      return `<label class="tile"><input type="checkbox" value="${esc(s.name)}"${checked.has(s.name) ? " checked" : ""}> <b>${esc(s.name)}</b><p>${esc(s.description)}</p><div>${req}${ctx}</div></label>`;
     }).join("") || emptyState("skill이 없습니다");
   } catch (e) {
     $("skills").innerHTML = errorBox(e.message);
@@ -366,8 +406,11 @@ async function loadOverview() {
 async function loadRunChoices() {
   const runs = await call("/api/runs").catch(() => []);
   const opts = runs.map((r) => `<option value="${esc(r.run_id || r.id)}">${esc(r.run_id || r.id)}</option>`).join("");
+  const keep = [$("cost-run").value, $("u-run").value];
   $("cost-run").innerHTML = opts;
   $("u-run").innerHTML = `<option value="">가격 없이</option>` + opts;
+  if (keep[0]) $("cost-run").value = keep[0];
+  if (keep[1]) $("u-run").value = keep[1];
 }
 
 async function loadCost() {
@@ -379,8 +422,8 @@ async function loadCost() {
       <div>출력 가격<b>${fmt(Math.round(p.output))}원</b>원가 ${fmt(Math.round(k.output))}원 /100만</div>
       <div>입력 가격<b>${fmt(Math.round(p.input))}원</b>원가 ${fmt(Math.round(k.input))}원 /100만</div>
       <div>캐시 입력<b>${fmt(Math.round(p.cached_input))}원</b>원가 ${fmt(Math.round(k.cached_input))}원 /100만</div>
-      <div>운영점<b>${op ? "동시 " + op.streams : "없음"}</b>${op ? fmt(Math.round(op.output_tok_s)) + " 토큰/초" : "SLO를 지킬 수 없음"}</div>
-      <div>필요 GPU<b>${c.gpus_needed ?? "-"}</b>목표 처리량 기준</div></div>` +
+      <div>운영점<b>${op ? "동시 " + esc(op.streams) : "없음"}</b>${op ? fmt(Math.round(op.output_tok_s)) + " 토큰/초" : "SLO를 지킬 수 없음"}</div>
+      <div>필요 GPU<b>${esc(c.gpus_needed ?? "-")}</b>목표 처리량 기준</div></div>` +
       (c.warnings.length ? `<div class="infobox">▲ 경고: ${c.warnings.map(esc).join(" · ")}</div>` : "");
   } catch (e) {
     $("cost-out").innerHTML = errorBox(e.message);
@@ -394,9 +437,9 @@ async function loadTenants() {
   try {
     const ts = await call("/api/ops/tenants");
     $("t-rows").innerHTML = ts.map((t) => `<tr><td>${esc(t.id)}</td><td>${esc(t.name)}</td>
-      <td class="num"><input class="num" data-limit="${esc(t.id)}" value="${t.token_limit_per_min ?? ""}" placeholder="없음" style="width:90px" aria-label="분당 토큰"></td>
+      <td class="num"><input class="num" data-limit="${esc(t.id)}" value="${esc(t.token_limit_per_min ?? "")}" placeholder="없음" style="width:90px" aria-label="분당 토큰"></td>
       <td><select data-cache="${esc(t.id)}" aria-label="캐시"><option ${t.cache_mode === "isolated" ? "selected" : ""}>isolated</option><option ${t.cache_mode === "shared" ? "selected" : ""}>shared</option></select></td>
-      <td>${t.keys.map((k) => `<code>${esc(k.prefix)}…</code> <button class="btn danger small" data-revoke="${esc(k.prefix)}">폐기</button>`).join("<br>") || "-"}</td>
+      <td>${t.keys.map((k) => `<code>${esc(k.prefix)}…</code> <button class="btn danger small" data-revoke="${esc(k.prefix)}" data-tenant="${esc(t.id)}">폐기</button>`).join("<br>") || "-"}</td>
       <td><button class="btn secondary" data-issue="${esc(t.id)}">키 발급</button></td></tr>`).join("")
       || rowMessage(6, emptyState("테넌트가 없습니다"));
   } catch (e) {
@@ -421,21 +464,19 @@ async function addTenant() {
 }
 
 function showKey(key) {
-  const back = document.createElement("div");
-  back.className = "modal";
-  back.innerHTML = `<div class="card" role="dialog" aria-modal="true"><h2>새 API 키</h2><p>창을 닫으면 다시 볼 수 없습니다. 지금 저장하세요.</p>
-    <div class="secret"></div><div class="actions" style="margin-top:12px"><button class="btn secondary">복사</button><button class="btn primary">닫기</button></div></div>`;
-  const text = back.querySelector(".secret");
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h2>새 API 키</h2><p>창을 닫으면 다시 볼 수 없습니다. 지금 저장하세요.</p>
+    <div class="secret"></div><div class="actions" style="margin-top:12px"><button class="btn secondary">복사</button><button class="btn primary">닫기</button></div>`;
+  const text = card.querySelector(".secret");
   text.textContent = key;
-  const [copy, close] = back.querySelectorAll("button");
+  const [copy, done] = card.querySelectorAll("button");
   copy.onclick = () => navigator.clipboard?.writeText(text.textContent).then(() => toast("복사했습니다"), () => toast("복사하지 못했습니다", "bad"));
-  close.onclick = () => {
+  const close = openModal(card, card.querySelector("h2"), done, () => {
     text.textContent = "";
-    back.remove();
     loadTenants();
-  };
-  document.body.append(back);
-  close.focus();
+  });
+  done.onclick = close;
 }
 
 async function tenantClick(e) {
@@ -453,7 +494,7 @@ async function tenantClick(e) {
     if (t.dataset.revoke) {
       const r = await mutate(`/api/ops/keys/${encodeURIComponent(t.dataset.revoke)}/revoke`, {}, {
         title: "API 키 폐기",
-        message: `키 ${t.dataset.revoke}…를 폐기합니다. 이 키를 쓰는 클라이언트는 즉시 접근할 수 없게 되고 되돌릴 수 없습니다.`,
+        message: `테넌트 ${t.dataset.tenant}의 키 ${t.dataset.revoke}…를 폐기합니다. 이 키를 쓰는 클라이언트는 즉시 접근할 수 없게 되고 되돌릴 수 없습니다.`,
         confirmText: "폐기",
         danger: true,
       });
@@ -507,18 +548,25 @@ async function downloadCsv() {
   try {
     const res = await api("/api/ops/invoice.csv?" + usageQuery());
     if (!res.ok) throw new Error(String(res.status));
+    if (inApp) {
+      const path = await tauri.invoke("save_csv", { name: "invoice", content: await res.text() });
+      toast(`CSV를 저장했습니다: ${path}`);
+      return;
+    }
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
     a.href = url;
     a.download = "invoice.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("CSV를 내려받았습니다");
   } catch (e) {
-    toast("CSV를 받지 못했습니다: " + e.message, "bad");
+    toast("CSV를 저장하지 못했습니다: " + (e && e.message ? e.message : e), "bad");
   }
 }
 
 function initPanels() {
+  ensureToastBox();
   const today = new Date(), iso = (d) => d.toISOString().slice(0, 10);
   $("u-from").value = iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
   $("u-to").value = iso(new Date(today.getTime() + 86400000));

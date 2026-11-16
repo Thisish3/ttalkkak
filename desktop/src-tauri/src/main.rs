@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod conn;
+mod download;
 mod http;
 
 use conn::{Connection, Keychain, Session};
@@ -68,6 +69,16 @@ async fn api_request(
     let dir = config_dir(&app)?;
     let (base, token) = session.credentials(&dir, &Keychain)?;
     http::send(&base, &token, &method.to_uppercase(), &path, body).await
+}
+
+/// Saves a CSV into the OS Downloads folder and returns the path.
+#[tauri::command]
+fn save_csv(app: AppHandle, name: String, content: String) -> Result<String, String> {
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|_| "다운로드 폴더를 찾지 못했습니다".to_string())?;
+    download::save_into(&dir, &name, &content).map(|p| p.display().to_string())
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -161,7 +172,8 @@ fn main() {
             forget_connection,
             ping_server,
             url_cleartext_risk,
-            api_request
+            api_request,
+            save_csv
         ])
         .run(tauri::generate_context!())
         .expect("ttalkkak 콘솔을 시작하지 못했습니다");

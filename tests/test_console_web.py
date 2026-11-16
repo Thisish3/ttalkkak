@@ -1,6 +1,9 @@
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 WEB = ROOT / "desktop" / "web"
@@ -78,3 +81,30 @@ def test_index_has_the_six_panels_and_components():
     css = (WEB / "app.css").read_text(encoding="utf-8")
     for sel in (".btn.danger", ".modal", ".toast", ".skeleton", ".errbox", "thead th"):
         assert sel in css
+
+
+def test_hostile_server_strings_are_escaped_when_rendered():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    r = subprocess.run(
+        [node, str(ROOT / "tests" / "js" / "render_escape.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0 and r.stdout.strip() == "OK", r.stderr + r.stdout
+
+
+def test_user_facing_placeholder_and_default_page():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "11c" not in html and "실시간 화면은 준비 중입니다" in html
+    assert ': "runs"' in js and "u-msg" not in html
+
+
+def test_csv_in_the_app_goes_through_the_rust_command():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'invoke("save_csv"' in js
+    rs = (ROOT / "desktop/src-tauri/src/main.rs").read_text(encoding="utf-8")
+    assert "save_csv," in rs or "save_csv\n" in rs

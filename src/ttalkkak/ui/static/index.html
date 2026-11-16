@@ -16,7 +16,7 @@
   </header>
   <nav class="sidebar" id="nav" aria-label="화면"></nav>
   <main>
-    <section class="panel" id="panel-live"><h1>실시간</h1><div class="empty-state">11c에서 채움</div></section>
+    <section class="panel" id="panel-live" hidden><h1>실시간</h1><div class="empty-state">실시간 화면은 준비 중입니다</div></section>
 
     <section class="panel" id="panel-overview" hidden>
       <h1>개요</h1>
@@ -47,12 +47,11 @@
       <h1>사용량</h1>
       <div class="card"><header><h2>사용량과 청구 (추정)</h2><p>게이트웨이 접근 로그 집계, 기간은 [시작, 끝)</p></header>
         <div class="row"><input type="date" id="u-from" aria-label="시작"><input type="date" id="u-to" aria-label="끝"><select id="u-run" aria-label="run"></select><button class="btn primary" id="u-load">집계</button><button class="btn secondary" id="u-csv">CSV</button></div>
-        <div id="u-msg"></div>
         <div class="tablewrap"><table><thead><tr><th>테넌트</th><th>모델</th><th class="num">요청</th><th class="num">입력</th><th class="num">캐시 입력</th><th class="num">출력</th><th class="num">금액(원)</th></tr></thead><tbody id="u-rows"></tbody></table></div>
       </div>
     </section>
 
-    <section class="panel" id="panel-runs" hidden>
+    <section class="panel" id="panel-runs">
       <h1>서빙 실행</h1>
       <p class="mut">모델을 고르면 GPU에 맞는 엔진 설정 후보를 만들고, 실제로 띄워 정확도·처리량·에이전트 준비 상태를 잰 뒤 하나를 고릅니다. <span id="gpu"></span></p>
       <div class="card"><header><h2>1. 모델 선택</h2><p>Hugging Face에서 검색하거나 ID를 직접 입력합니다. NIM 모델은 <code>nim:</code>으로 시작합니다.</p></header>
