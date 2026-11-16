@@ -173,3 +173,82 @@ def test_rejected_second_loadtest_keeps_running_model(tmp_path):
         lt.LoadTestRunner.__init__ = orig
     assert r.status_code == 409 and runner.model == "old"
     assert post(c, "/api/loadtest", {"max_users": "x"}).status_code == 400
+
+
+GOOD = (
+    '{"t":"2026-11-16T12:00:00Z","action":"up","from_replicas":1,'
+    '"to_replicas":2,"reason":"r"}'
+)
+
+
+class LogKc(Kc):
+    def __init__(self, logs):
+        super().__init__()
+        self.logs = logs
+
+    def __call__(self, args, input=None):
+        from types import SimpleNamespace
+
+        if args[0] == "logs":
+            self.calls.append(args)
+            return SimpleNamespace(returncode=0, stdout=self.logs, stderr="")
+        return super().__call__(args, input)
+
+
+def test_autoscale_toggle_patches_configmap(cc):
+    c, kc = cc
+    assert post(c, "/api/autoscale", {"enabled": "yes"}).status_code == 400
+    assert post(c, "/api/autoscale", {"enabled": False}).status_code == 200
+    patch = [a for a in kc.calls if a[0] == "patch"][-1]
+    assert patch[:4] == ["patch", "configmap", "ttalkkak-autoscale", "-n"]
+    assert json.loads(patch[patch.index("-p") + 1]) == {"data": {"enabled": "false"}}
+
+
+def test_decisions_parsed_and_appended_once(tmp_path):
+    kc = LogKc(f"noise\nAUTOSCALE {GOOD}\nAUTOSCALE {{bad\n")
+    deps = UiDeps(
+        list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
+        cluster_status=list, kubectl=kc,
+    )  # fmt: skip
+    c = TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
+    for _ in range(2):
+        rows = c.get("/api/autoscale/decisions").json()
+        assert [r["action"] for r in rows] == ["up"]
+    assert ["logs", "deploy/ttalkkak-ops", "-n", "ttalkkak", "--since=24h"] in kc.calls
+    f = tmp_path / "runs/autoscale/2026-11-16.jsonl"
+    assert len(f.read_text().splitlines()) == 1
+    snap = c.get("/api/live").json()
+    assert [d["action"] for d in snap["autoscale"]["decisions"]] == ["up"]
+
+
+def test_up_decision_gets_ready_after_s(tmp_path):
+    from types import SimpleNamespace
+
+    def pod(name, at):
+        return {
+            "metadata": {"name": name},
+            "status": {"conditions": [
+                {"type": "Ready", "status": "True", "lastTransitionTime": at}
+            ]},
+        }  # fmt: skip
+
+    class K(LogKc):
+        def __call__(self, args, input=None):
+            if args[:2] == ["get", "pods"]:
+                items = [
+                    pod("vllm-qwen-a", "2026-11-16T11:00:00Z"),
+                    pod("vllm-qwen-b", "2026-11-16T12:01:30Z"),
+                ]
+                return SimpleNamespace(
+                    returncode=0, stdout=json.dumps({"items": items}), stderr=""
+                )
+            return super().__call__(args, input)
+
+    deps = UiDeps(
+        list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
+        cluster_status=list, kubectl=K(f"AUTOSCALE {GOOD}\n"),
+    )  # fmt: skip
+    c = TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
+    assert c.get("/api/autoscale/decisions").json()[0]["ready_after_s"] == 90
+    line = (tmp_path / "runs/autoscale/2026-11-16.jsonl").read_text()
+    assert json.loads(line)["ready_after_s"] == 90

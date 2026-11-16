@@ -547,6 +547,13 @@ def serve(
     jwks_url: str | None = typer.Option(None, help="기본 <issuer>/keys"),
     host: str = "127.0.0.1",
     port: int = 8790,
+    prometheus_url: str | None = typer.Option(
+        None,
+        help="자동 증감 루프가 읽을 Prometheus 주소 (--autoscale-namespace와 함께)",
+    ),
+    autoscale_namespace: str | None = typer.Option(
+        None, help="자동 증감 루프가 조작할 네임스페이스"
+    ),
 ) -> None:
     """게이트웨이 인증(/authz), 가격표, 사용량, 테넌트 지표 서버."""
     _need_extra("uvicorn", "starlette", "jwt")
@@ -570,6 +577,8 @@ def serve(
         client_id=client_id,
         jwks_url=jwks_url or f"{issuer.rstrip('/')}/keys",
         logs_from_cluster=logs_from_cluster,
+        prometheus_url=prometheus_url,
+        autoscale_namespace=autoscale_namespace,
     )
     typer.echo(f"ttalkkak ops serve: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -606,8 +606,11 @@ def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
         "--cost", "/etc/ttalkkak/cost/cost.json",
         "--issuer", issuer_of(opt), "--client-id", CLI_CLIENT_ID,
         "--jwks-url", jwks, "--logs-from-cluster",
+        "--prometheus-url", f"http://prometheus.{ns}.svc:9090",
+        "--autoscale-namespace", ns,
     ]  # fmt: skip
     pod_reader = "ttalkkak-envoy-log-reader"
+    scaler = "ttalkkak-ops-autoscale"
     return [
         {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": _meta(OPS_SERVICE, ns)},
         {
@@ -624,6 +627,24 @@ def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
             "metadata": _meta(pod_reader, "envoy-gateway-system"),
             "subjects": [{"kind": "ServiceAccount", "name": OPS_SERVICE, "namespace": ns}],
             "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": pod_reader},
+        },
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": _meta(scaler, ns),
+            "rules": [
+                {"apiGroups": ["apps"], "resources": ["deployments/scale"], "verbs": ["get", "patch"]},
+                {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "list"]},
+                {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get"]},
+                {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
+            ],
+        },
+        {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "RoleBinding",
+            "metadata": _meta(scaler, ns),
+            "subjects": [{"kind": "ServiceAccount", "name": OPS_SERVICE, "namespace": ns}],
+            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": scaler},
         },
         {
             "apiVersion": "v1",

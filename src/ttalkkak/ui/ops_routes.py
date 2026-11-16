@@ -22,10 +22,30 @@ from ttalkkak.live import prom as live_prom
 from ttalkkak.live.loadtest import LoadTestRunner, stages_for
 from ttalkkak.live.prom import PromError
 from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
+from ttalkkak.ops_api.autoscaler import parse_decisions
 
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 POD_NAME = re.compile(r"^[a-z0-9-]+$")
 CONFIG_TTL_S = 10.0
+OPS_DEPLOY = "ttalkkak-ops"
+
+
+def _ts(text: str) -> datetime:
+    return datetime.fromisoformat(text).astimezone(UTC)
+
+
+def _jsonl(rows: list[dict]) -> str:
+    return "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
 
 
 def _err(msg: str, status: int) -> JSONResponse:
@@ -137,6 +157,82 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         cache[name] = (time.monotonic(), data)
         return data
 
+    decisions_dir = root / "runs" / "autoscale"
+
+    def saved_decisions() -> list[dict]:
+        """Persisted decisions, oldest first; unreadable files and lines are skipped."""
+        rows: list[dict] = []
+        for f in sorted(decisions_dir.glob("*.jsonl")):
+            try:
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    try:
+                        rows.append(json.loads(line))
+                    except ValueError:
+                        continue
+            except OSError:
+                continue
+        return [r for r in rows if isinstance(r, dict) and "t" in r]
+
+    def ready_times(deployment: str) -> list[datetime]:
+        r = deps.kubectl(["get", "pods", "-n", deps.namespace, "-o", "json"])
+        if r.returncode != 0:
+            return []
+        out = []
+        for p in json.loads(r.stdout).get("items", []):
+            if not p["metadata"]["name"].startswith(f"{deployment}-"):
+                continue
+            for c in p.get("status", {}).get("conditions", []):
+                if c.get("type") == "Ready" and c.get("status") == "True":
+                    out.append(_ts(c["lastTransitionTime"]))
+        return sorted(out)
+
+    def sync_decisions() -> list[dict]:
+        """Merge the ops pod's AUTOSCALE log lines into runs/autoscale/<date>.jsonl."""
+        if deps.kubectl is None:
+            raise TtalkkakError("클러스터 연결 없음", 503)
+        r = deps.kubectl(
+            ["logs", f"deploy/{OPS_DEPLOY}", "-n", deps.namespace, "--since=24h"]
+        )
+        if r.returncode != 0:
+            lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
+            why = lines[-1].strip() if lines else f"exit {r.returncode}"
+            raise TtalkkakError(f"자동 증감 기록을 읽지 못했습니다: {why}", 502)
+        known = saved_decisions()
+        seen = {(d["t"], d.get("action")) for d in known}
+        fresh = []
+        for d in parse_decisions((r.stdout or "").splitlines()):
+            if (d["t"], d["action"]) not in seen:
+                seen.add((d["t"], d["action"]))
+                fresh.append(d)
+        rows = known + fresh
+        pending = [d for d in rows if d["action"] == "up" and "ready_after_s" not in d]
+        if pending:
+            try:
+                deployment, _ = autoscale_config()
+                ready = ready_times(deployment)
+            except (TtalkkakError, ValueError, OSError):
+                ready = []
+            for d in pending:
+                if len(ready) >= d["to_replicas"]:
+                    t = _ts(d["t"])
+                    done = ready[d["to_replicas"] - 1]
+                    if done >= t:
+                        d["ready_after_s"] = round((done - t).total_seconds())
+        by_file: dict[str, list[dict]] = {}
+        for d in rows:
+            by_file.setdefault(_ts(d["t"]).strftime("%Y-%m-%d"), []).append(d)
+        decisions_dir.mkdir(parents=True, exist_ok=True)
+        for day, items in by_file.items():
+            f = decisions_dir / f"{day}.jsonl"
+            new = [d for d in items if d in fresh]
+            old = [d for d in items if d not in fresh]
+            if f.exists() and old != _read_jsonl(f):
+                f.write_text(_jsonl(items), encoding="utf-8")
+            elif new:
+                with f.open("a", encoding="utf-8") as fh:
+                    fh.write(_jsonl(new))
+        return sorted(rows, key=lambda d: _ts(d["t"]), reverse=True)
+
     def live_snapshot() -> dict:
         errors: dict[str, str] = {}
         try:
@@ -155,17 +251,17 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             pass
         auto = configmap("ttalkkak-autoscale")
         deployment = (auto or {}).get("deployment") or ""
-        autoscale = {"enabled": None, "max_replicas": None, "decisions": []}
+        autoscale = {
+            "enabled": None,
+            "max_replicas": None,
+            "decisions": saved_decisions()[-10:],
+        }
         if auto and deployment and str(auto.get("max_replicas", "")).isdigit():
             vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
             autoscale.update(
                 enabled=auto.get("enabled") == "true",
                 max_replicas=int(auto["max_replicas"]),
             )
-            try:
-                autoscale["decisions"] = json.loads(auto.get("decisions") or "[]")
-            except ValueError:
-                pass
         else:
             vllm_pods = (
                 [p for p in pods if p["name"] in running_pods]
@@ -252,6 +348,25 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         )  # fmt: skip
         cache.pop("ttalkkak-autoscale", None)
         return JSONResponse({"ok": True, "count": count})
+
+    @guarded
+    async def autoscale_toggle(request):
+        b = await body(request)
+        enabled = b.get("enabled")
+        if not isinstance(enabled, bool):
+            raise TtalkkakError("enabled는 불리언입니다", 400)
+        value = json.dumps({"data": {"enabled": "true" if enabled else "false"}})
+        await run_in_threadpool(
+            kube,
+            ["patch", "configmap", "ttalkkak-autoscale", "-n", deps.namespace,
+             "--type", "merge", "-p", value],
+        )  # fmt: skip
+        cache.pop("ttalkkak-autoscale", None)
+        return JSONResponse({"ok": True, "enabled": enabled})
+
+    @guarded
+    async def autoscale_decisions(request):
+        return JSONResponse(await run_in_threadpool(sync_decisions))
 
     @guarded
     async def delete_pod(request):
@@ -381,6 +496,8 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         Route("/api/loadtest/{tid}", loadtest_status),
         Route("/api/loadtests", loadtest_list),
         Route("/api/replicas", scale, methods=["POST"]),
+        Route("/api/autoscale", autoscale_toggle, methods=["POST"]),
+        Route("/api/autoscale/decisions", autoscale_decisions),
         Route("/api/replicas/{pod}/delete", delete_pod, methods=["POST"]),
         Route("/api/ops/status", status),
         Route("/api/ops/cost", cost),

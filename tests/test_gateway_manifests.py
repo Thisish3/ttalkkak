@@ -283,3 +283,32 @@ def test_autoscale_configmaps_rendered(store):
         "deployment": dep["metadata"]["name"],
     }
     assert cms["ttalkkak-capacity"]["data"] == {"capacity.json": "{}"}
+
+
+def test_ops_serve_role_allows_scale(store):
+    _, d = docs(store)
+    roles = [
+        x for x in kind(d, "25-ops-serve.yaml", "Role")
+        if x["metadata"]["namespace"] == "ttalkkak"
+    ]  # fmt: skip
+    (role,) = roles
+    verbs = {
+        (g, r): set(rule["verbs"])
+        for rule in role["rules"]
+        for g in rule["apiGroups"]
+        for r in rule["resources"]
+    }
+    assert verbs[("apps", "deployments/scale")] == {"get", "patch"}
+    assert verbs[("", "configmaps")] == {"get"}
+    assert verbs[("apps", "deployments")] == {"get", "list"}
+    assert verbs[("", "pods")] == {"list"}
+    binds = kind(d, "25-ops-serve.yaml", "RoleBinding")
+    assert any(b["roleRef"]["name"] == role["metadata"]["name"] for b in binds)
+    args = kind(d, "25-ops-serve.yaml", "Deployment")[0]["spec"]["template"]["spec"][
+        "containers"
+    ][0]["args"]
+    assert (
+        args[args.index("--prometheus-url") + 1]
+        == "http://prometheus.ttalkkak.svc:9090"
+    )
+    assert args[args.index("--autoscale-namespace") + 1] == "ttalkkak"

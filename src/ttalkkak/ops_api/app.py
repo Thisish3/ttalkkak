@@ -229,6 +229,8 @@ def build_serve_app(
     client_id: str,
     jwks_url: str,
     logs_from_cluster: bool = False,
+    prometheus_url: str | None = None,
+    autoscale_namespace: str | None = None,
 ) -> Starlette:
     import httpx
 
@@ -243,6 +245,11 @@ def build_serve_app(
         log_source = sources.log_files(logs)
     else:
         log_source = list
+    if prometheus_url and autoscale_namespace:
+        from ttalkkak.live.prom import Prom
+        from ttalkkak.ops_api.autoscaler import K8s, start_loop
+
+        start_loop(K8s(), Prom(prometheus_url, httpx.Client()), autoscale_namespace)
     return create_ops_api(
         tenants=sources.json_file(tenants_path),
         cost=cost,
