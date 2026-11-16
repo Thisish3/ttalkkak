@@ -300,6 +300,8 @@ def test_ops_serve_role_allows_scale(store):
     }
     assert verbs[("apps", "deployments/scale")] == {"get", "patch"}
     assert verbs[("", "configmaps")] == {"get"}
+    cm_rule = next(r for r in role["rules"] if r["resources"] == ["configmaps"])
+    assert cm_rule["resourceNames"] == ["ttalkkak-autoscale", "ttalkkak-capacity"]
     assert verbs[("apps", "deployments")] == {"get", "list"}
     assert verbs[("", "pods")] == {"list"}
     binds = kind(d, "25-ops-serve.yaml", "RoleBinding")
@@ -312,3 +314,10 @@ def test_ops_serve_role_allows_scale(store):
         == "http://prometheus.ttalkkak.svc:9090"
     )
     assert args[args.index("--autoscale-namespace") + 1] == "ttalkkak"
+
+
+def test_ops_serve_runs_exactly_one_replica(store):
+    _, d = docs(store)
+    (dep,) = kind(d, "25-ops-serve.yaml", "Deployment")
+    assert dep["spec"]["replicas"] == 1
+    assert dep["spec"].get("strategy", {}).get("type") in (None, "Recreate")

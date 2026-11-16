@@ -214,3 +214,47 @@ def test_metrics_ignore_rejected_and_dedup_per_tenant(tmp_path):
 def test_authz_always_sets_cache_salt_header_for_shared_tenants(env):
     r = env[0].post("/authz/x", headers={"authorization": f"Bearer {token(['beta'])}"})
     assert r.headers["x-ttalkkak-cache-salt"] == ""
+
+
+def _loop_app(tmp_path, env, monkeypatch, **kw):
+    from ttalkkak.ops_api import autoscaler
+    from ttalkkak.ops_api.app import build_serve_app
+
+    started = []
+
+    def fake_start(k8s, prom, ns, stop=None):
+        started.append((ns, stop))
+
+    monkeypatch.setattr(autoscaler, "start_loop", fake_start)
+    monkeypatch.setattr(autoscaler, "K8s", lambda: object())
+    _, _, st = env
+    (tmp_path / "tenants.json").write_text(tenants_json(st))
+    app = build_serve_app(
+        tenants_path=tmp_path / "tenants.json", cost_path=None, logs=None,
+        issuer=ISS, client_id=CID, jwks_url="https://unused.test/keys", **kw,
+    )  # fmt: skip
+    return app, started
+
+
+def test_autoscale_loop_starts_on_startup_and_stops_on_shutdown(
+    tmp_path, env, monkeypatch
+):
+    app, started = _loop_app(
+        tmp_path, env, monkeypatch,
+        prometheus_url="http://p:9090", autoscale_namespace="ttalkkak",
+    )  # fmt: skip
+    assert started == []
+    with TestClient(app):
+        assert len(started) == 1 and started[0][0] == "ttalkkak"
+        stop = app.state.autoscale_stop
+        assert stop is started[0][1] and not stop.is_set()
+    assert stop.is_set()
+
+
+def test_autoscale_flags_must_come_together(tmp_path, env, monkeypatch):
+    import pytest
+
+    from ttalkkak.errors import TtalkkakError
+
+    with pytest.raises(TtalkkakError, match="함께"):
+        _loop_app(tmp_path, env, monkeypatch, prometheus_url="http://p:9090")

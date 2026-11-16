@@ -39,8 +39,8 @@ class State(BaseModel):
 class Decision(BaseModel):
     t: datetime
     action: Literal["up", "down", "hold"]
-    from_replicas: int
-    to_replicas: int
+    from_replicas: int | None
+    to_replicas: int | None
     reason: str
 
 

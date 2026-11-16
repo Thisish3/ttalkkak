@@ -196,3 +196,18 @@ def test_runner_merge_keeps_other_counts(tmp_path, store):
     (_, manifest) = next(c for c in k.calls if c[0][0] == "apply")
     cap = json.loads(json.loads(manifest)["data"]["capacity.json"])
     assert cap["1"]["loadtest_id"] == "old" and cap["2"]["loadtest_id"] == tid
+
+
+def test_runner_read_error_does_not_overwrite_capacity(tmp_path, store):
+    class K(Kubectl):
+        def __call__(self, args, input=None):
+            super().__call__(args, input)
+            if args[0] == "get":
+                return SimpleNamespace(returncode=1, stdout="", stderr="Forbidden")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    k = K()
+    r = runner(tmp_path, store, good_run, k)
+    tid = r.start(10, replicas=2, autoscale_on=False)
+    assert not [c for c in k.calls if c[0][0] == "apply"]
+    assert "저장하지 않았습니다" in r.status(tid)["error"]

@@ -159,3 +159,134 @@ def test_tick_holds_when_current_count_has_no_record():
     k8s = FakeK8s(desired=2, ready=2, raw=_per_count(REC))
     d, _ = tick(k8s, FakeProm(tpm=500.0), State(), Rules(), T0, NS)
     assert d.action == "hold" and "용량 기록 없음" in d.reason
+
+
+def _lines(capsys):
+    return [
+        ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("AUTOSCALE ")
+    ]
+
+
+def test_cooldown_hold_is_deduped_by_stable_key(capsys):
+    k8s = FakeK8s()
+    _, st = run(k8s, FakeProm(tpm=900.0), 14)
+    capsys.readouterr()
+    k8s.scale = (2, 2)
+    rec2 = REC.model_copy(update={"replicas": 2, "max_tokens_per_min": 2000.0})
+    k8s.cms["ttalkkak-capacity"]["capacity.json"] = _per_count(REC, rec2)
+    base = st.last_change
+    for i in range(1, 25):
+        _, st = tick(
+            k8s, FakeProm(tpm=1000.0), st, Rules(), base + timedelta(seconds=10 * i), NS
+        )
+    cool = [ln for ln in _lines(capsys) if "쿨다운" in ln]
+    assert len(cool) == 1
+
+
+def test_ready_after_s_emitted_by_loop(capsys):
+    k8s = FakeK8s()
+    out, st = run(k8s, FakeProm(tpm=900.0), 14)
+    up = next(d for d in out if d and d.action == "up")
+    capsys.readouterr()
+    k8s.scale = (2, 1)
+    _, st = tick(
+        k8s, FakeProm(tpm=900.0), st, Rules(), up.t + timedelta(seconds=10), NS
+    )
+    assert not [ln for ln in _lines(capsys) if '"ready"' in ln]
+    k8s.scale = (2, 2)
+    _, st = tick(
+        k8s, FakeProm(tpm=900.0), st, Rules(), up.t + timedelta(seconds=75), NS
+    )
+    _, st = tick(
+        k8s, FakeProm(tpm=900.0), st, Rules(), up.t + timedelta(seconds=85), NS
+    )
+    ready = [
+        json.loads(ln[len("AUTOSCALE ") :]) for ln in _lines(capsys) if '"ready"' in ln
+    ]
+    assert len(ready) == 1
+    assert ready[0]["action"] == "ready" and ready[0]["ready_after_s"] == 75
+    assert ready[0]["to_replicas"] == 2
+    rows = parse_decisions(["AUTOSCALE " + json.dumps(ready[0])])
+    assert rows[0]["ready_after_s"] == 75
+
+
+def test_token_is_reread_per_request(tmp_path):
+    import httpx
+
+    from ttalkkak.ops_api.autoscaler import in_cluster_transport
+
+    (tmp_path / "token").write_text("one\n")
+    (tmp_path / "ca.crt").write_text("")
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers["authorization"])
+        return httpx.Response(200, json={})
+
+    call = in_cluster_transport(
+        sa_dir=tmp_path, http_transport=httpx.MockTransport(handler)
+    )
+    call("GET", "/x", None)
+    (tmp_path / "token").write_text("two\n")
+    call("GET", "/x", None)
+    assert seen == ["Bearer one", "Bearer two"]
+
+
+def test_missing_token_does_not_crash_and_holds(tmp_path, capsys):
+    from ttalkkak.ops_api.autoscaler import in_cluster_transport
+
+    k8s = K8s(in_cluster_transport(sa_dir=tmp_path / "none"))
+    d, _ = tick(k8s, FakeProm(), State(), Rules(), T0, NS)
+    assert d.action == "hold" and d.reason.startswith("오류")
+    assert "0→0" not in d.reason
+
+
+def test_early_error_uses_last_known_replicas(capsys):
+    k8s = FakeK8s(desired=2, ready=2)
+    _, st = tick(k8s, FakeProm(tpm=500.0), State(), Rules(), T0, NS)
+    d, _ = tick(
+        k8s,
+        FakeProm(error=RuntimeError("끊김")),
+        st,
+        Rules(),
+        T0 + timedelta(seconds=10),
+        NS,
+    )
+    assert (d.from_replicas, d.to_replicas) == (2, 2)
+    first, _ = tick(
+        FakeK8s(), FakeProm(error=RuntimeError("x")), State(), Rules(), T0, NS
+    )
+    assert first.from_replicas == 1  # scale is read before Prometheus
+
+
+def test_error_before_any_scale_read_leaves_counts_unset():
+    class Broken(FakeK8s):
+        def get_configmap(self, ns, name):
+            raise RuntimeError("api 끊김")
+
+    d, _ = tick(Broken(), FakeProm(), State(), Rules(), T0, NS)
+    assert d.from_replicas is None and d.to_replicas is None
+    assert "api 끊김" in d.reason
+
+
+def test_corrupt_capacity_record_holds_in_korean():
+    k8s = FakeK8s(raw="{not json")
+    d, _ = tick(k8s, FakeProm(), State(), Rules(), T0, NS)
+    assert d.action == "hold"
+    assert d.reason.startswith("오류: 용량 기록을 읽을 수 없습니다")
+
+
+def test_missing_record_reason_names_the_count():
+    k8s = FakeK8s(desired=2, ready=2, raw=_per_count(REC))
+    d, _ = tick(k8s, FakeProm(tpm=500.0), State(), Rules(), T0, NS)
+    assert d.reason == "용량 기록 없음: 복제본 2개 부하 시험 필요"
+
+
+def test_no_metrics_reason_is_distinct():
+    class NoTpm(FakeProm):
+        def instant(self, query):
+            return [] if query == q.TPM else super().instant(query)
+
+    d, _ = tick(FakeK8s(), NoTpm(), State(), Rules(), T0, NS)
+    assert d.action == "hold" and "지표 없음" in d.reason
+    assert "용량 기록 없음" not in d.reason

@@ -2,7 +2,9 @@ import json
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from ttalkkak.errors import TtalkkakError
 
 LOADTEST_TENANT = "ttalkkak-loadtest"
 
@@ -31,13 +33,19 @@ def parse_capacity(raw: str | None) -> dict[int, CapacityRecord]:
     New format: {"<replicas>": record, ...}. The old single record is read as
     the entry for its own replica count.
     """
-    data = json.loads(raw) if raw else {}
-    if not data:
-        return {}
-    if "replicas" in data:
-        rec = CapacityRecord.model_validate(data)
-        return {rec.replicas: rec}
-    return {int(n): CapacityRecord.model_validate(r) for n, r in data.items()}
+    try:
+        data = json.loads(raw) if raw else {}
+        if not data:
+            return {}
+        if "replicas" in data:
+            rec = CapacityRecord.model_validate(data)
+            return {rec.replicas: rec}
+        return {int(n): CapacityRecord.model_validate(r) for n, r in data.items()}
+    except (ValueError, ValidationError, TypeError, AttributeError) as err:
+        raise TtalkkakError(
+            f"용량 기록을 읽을 수 없습니다 (ConfigMap ttalkkak-capacity): "
+            f"{type(err).__name__}. 부하 시험을 다시 실행하세요"
+        ) from err
 
 
 def merge_capacity(raw: str | None, rec: CapacityRecord) -> str:

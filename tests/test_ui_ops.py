@@ -221,37 +221,70 @@ def test_decisions_parsed_and_appended_once(tmp_path):
     assert [d["action"] for d in snap["autoscale"]["decisions"]] == ["up"]
 
 
-def test_up_decision_gets_ready_after_s(tmp_path):
-    from types import SimpleNamespace
+READY = (
+    '{"t":"2026-11-16T12:01:30Z","action":"ready","from_replicas":2,'
+    '"to_replicas":2,"reason":"준비 완료","ready_after_s":90}'
+)
 
-    def pod(name, at):
-        return {
-            "metadata": {"name": name},
-            "status": {"conditions": [
-                {"type": "Ready", "status": "True", "lastTransitionTime": at}
-            ]},
-        }  # fmt: skip
 
-    class K(LogKc):
-        def __call__(self, args, input=None):
-            if args[:2] == ["get", "pods"]:
-                items = [
-                    pod("vllm-qwen-a", "2026-11-16T11:00:00Z"),
-                    pod("vllm-qwen-b", "2026-11-16T12:01:30Z"),
-                ]
-                return SimpleNamespace(
-                    returncode=0, stdout=json.dumps({"items": items}), stderr=""
-                )
-            return super().__call__(args, input)
-
+def _client(tmp_path, logs):
     deps = UiDeps(
         list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
-        cluster_status=list, kubectl=K(f"AUTOSCALE {GOOD}\n"),
+        cluster_status=list, kubectl=LogKc(logs),
     )  # fmt: skip
-    c = TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
-    assert c.get("/api/autoscale/decisions").json()[0]["ready_after_s"] == 90
-    line = (tmp_path / "runs/autoscale/2026-11-16.jsonl").read_text()
-    assert json.loads(line)["ready_after_s"] == 90
+    return TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
+
+
+def test_console_reads_ready_after_s_from_loop_line(tmp_path):
+    c = _client(tmp_path, f"AUTOSCALE {GOOD}\nAUTOSCALE {READY}\n")
+    rows = c.get("/api/autoscale/decisions").json()
+    assert [r["action"] for r in rows] == ["ready", "up"]
+    assert rows[0]["ready_after_s"] == 90
+    assert (
+        len((tmp_path / "runs/autoscale/2026-11-16.jsonl").read_text().splitlines())
+        == 2
+    )
+
+
+def test_sync_skips_malformed_rows_and_never_rewrites(tmp_path):
+    d = tmp_path / "runs/autoscale"
+    d.mkdir(parents=True)
+    f = d / "2026-11-16.jsonl"
+    f.write_text('{"nope": 1}\nnot json\n{"t":"bad","action":"up"}\n')
+    c = _client(tmp_path, f"AUTOSCALE {GOOD}\n")
+    r = c.get("/api/autoscale/decisions")
+    assert r.status_code == 200 and [x["action"] for x in r.json()] == ["up"]
+    text = f.read_text()
+    assert text.startswith('{"nope": 1}\nnot json\n{"t":"bad","action":"up"}\n')
+    assert len(text.splitlines()) == 4
+
+
+def test_concurrent_syncs_do_not_duplicate_lines(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    c = _client(tmp_path, f"AUTOSCALE {GOOD}\nAUTOSCALE {READY}\n")
+    with ThreadPoolExecutor(8) as ex:
+        list(ex.map(lambda _: c.get("/api/autoscale/decisions"), range(16)))
+    lines = (tmp_path / "runs/autoscale/2026-11-16.jsonl").read_text().splitlines()
+    assert len(lines) == 2
+
+
+def test_live_decisions_newest_first_and_synced(tmp_path):
+    c = _client(tmp_path, f"AUTOSCALE {GOOD}\nAUTOSCALE {READY}\n")
+    snap = c.get("/api/live").json()
+    assert [d["action"] for d in snap["autoscale"]["decisions"]] == ["ready", "up"]
+
+
+def test_live_reads_only_recent_decision_files(tmp_path):
+    d = tmp_path / "runs/autoscale"
+    d.mkdir(parents=True)
+    for day in ("01", "02", "03", "04"):
+        (d / f"2026-10-{day}.jsonl").write_text(
+            json.dumps({"t": f"2026-10-{day}T00:00:00+00:00", "action": "up"}) + "\n"
+        )
+    c = _client(tmp_path, "")
+    got = c.get("/api/live").json()["autoscale"]["decisions"]
+    assert [x["t"][:10] for x in got] == ["2026-10-04", "2026-10-03"]
 
 
 def test_live_exposes_missing_capacity_counts(tmp_path):

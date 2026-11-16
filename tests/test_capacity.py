@@ -228,3 +228,14 @@ def test_capacity_records_per_count_and_old_format():
         == "부하 시험 필요: 1개, 2개, 3개"
     )
     assert missing_loadtest_text(merged, 2) is None
+
+
+def test_corrupt_capacity_raises_korean_error():
+    import pytest
+
+    from ttalkkak.capacity import parse_capacity
+    from ttalkkak.errors import TtalkkakError
+
+    for raw in ("{not json", '{"1": {"replicas": "x"}}'):
+        with pytest.raises(TtalkkakError, match="용량 기록을 읽을 수 없습니다"):
+            parse_capacity(raw)

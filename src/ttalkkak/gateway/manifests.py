@@ -635,7 +635,12 @@ def _ops_serve(opt: GatewayOptions, cost: CostResult | None) -> list[dict]:
             "rules": [
                 {"apiGroups": ["apps"], "resources": ["deployments/scale"], "verbs": ["get", "patch"]},
                 {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["get", "list"]},
-                {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get"]},
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "verbs": ["get"],
+                    "resourceNames": ["ttalkkak-autoscale", "ttalkkak-capacity"],
+                },
                 {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
             ],
         },

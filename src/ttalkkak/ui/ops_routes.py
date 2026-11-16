@@ -32,6 +32,7 @@ from ttalkkak.ops_api.autoscaler import parse_decisions
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 POD_NAME = re.compile(r"^[a-z0-9-]+$")
 CONFIG_TTL_S = 10.0
+RECENT_DECISION_FILES = 2
 OPS_DEPLOY = "ttalkkak-ops"
 
 
@@ -164,79 +165,65 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
 
     decisions_dir = root / "runs" / "autoscale"
 
-    def saved_decisions() -> list[dict]:
-        """Persisted decisions, oldest first; unreadable files and lines are skipped."""
+    sync_lock = threading.Lock()
+    synced_at = [float("-inf")]
+
+    def saved_decisions(days: int = RECENT_DECISION_FILES) -> list[dict]:
+        """Rows of the newest `days` files, newest first; bad files/rows skipped."""
         rows: list[dict] = []
-        for f in sorted(decisions_dir.glob("*.jsonl")):
+        for f in sorted(decisions_dir.glob("*.jsonl"))[-days:]:
             try:
                 for line in f.read_text(encoding="utf-8").splitlines():
                     try:
-                        rows.append(json.loads(line))
-                    except ValueError:
+                        row = json.loads(line)
+                        _ts(row["t"])
+                        row["action"]
+                    except (ValueError, KeyError, TypeError, AttributeError):
                         continue
+                    rows.append(row)
             except OSError:
                 continue
-        return [r for r in rows if isinstance(r, dict) and "t" in r]
-
-    def ready_times(deployment: str) -> list[datetime]:
-        r = deps.kubectl(["get", "pods", "-n", deps.namespace, "-o", "json"])
-        if r.returncode != 0:
-            return []
-        out = []
-        for p in json.loads(r.stdout).get("items", []):
-            if not p["metadata"]["name"].startswith(f"{deployment}-"):
-                continue
-            for c in p.get("status", {}).get("conditions", []):
-                if c.get("type") == "Ready" and c.get("status") == "True":
-                    out.append(_ts(c["lastTransitionTime"]))
-        return sorted(out)
+        rows.sort(key=lambda d: _ts(d["t"]), reverse=True)
+        return rows
 
     def sync_decisions() -> list[dict]:
-        """Merge the ops pod's AUTOSCALE log lines into runs/autoscale/<date>.jsonl."""
+        """Append the ops pod's new AUTOSCALE log lines to runs/autoscale/<date>.jsonl."""
         if deps.kubectl is None:
             raise TtalkkakError("클러스터 연결 없음", 503)
-        r = deps.kubectl(
-            ["logs", f"deploy/{OPS_DEPLOY}", "-n", deps.namespace, "--since=24h"]
-        )
-        if r.returncode != 0:
-            lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
-            why = lines[-1].strip() if lines else f"exit {r.returncode}"
-            raise TtalkkakError(f"자동 증감 기록을 읽지 못했습니다: {why}", 502)
-        known = saved_decisions()
-        seen = {(d["t"], d.get("action")) for d in known}
-        fresh = []
-        for d in parse_decisions((r.stdout or "").splitlines()):
-            if (d["t"], d["action"]) not in seen:
-                seen.add((d["t"], d["action"]))
-                fresh.append(d)
-        rows = known + fresh
-        pending = [d for d in rows if d["action"] == "up" and "ready_after_s" not in d]
-        if pending:
+        with sync_lock:
+            r = deps.kubectl(
+                ["logs", f"deploy/{OPS_DEPLOY}", "-n", deps.namespace, "--since=24h"]
+            )
+            if r.returncode != 0:
+                lines = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
+                why = lines[-1].strip() if lines else f"exit {r.returncode}"
+                raise TtalkkakError(f"자동 증감 기록을 읽지 못했습니다: {why}", 502)
+            known = saved_decisions()
+            seen = {(_ts(d["t"]), d["action"]) for d in known}
+            by_file: dict[str, list[dict]] = {}
+            for d in parse_decisions((r.stdout or "").splitlines()):
+                key = (_ts(d["t"]), d["action"])
+                if key not in seen:
+                    seen.add(key)
+                    by_file.setdefault(key[0].strftime("%Y-%m-%d"), []).append(d)
+            if by_file:
+                decisions_dir.mkdir(parents=True, exist_ok=True)
+            for day, items in by_file.items():
+                with (decisions_dir / f"{day}.jsonl").open("a", encoding="utf-8") as fh:
+                    fh.write(_jsonl(items))
+            synced_at[0] = time.monotonic()
+            return saved_decisions()
+
+    def recent_decisions() -> list[dict]:
+        """Decisions for the snapshot; syncs from the log at most every TTL."""
+        if deps.kubectl is not None and (
+            time.monotonic() - synced_at[0] >= CONFIG_TTL_S
+        ):
             try:
-                deployment, _ = autoscale_config()
-                ready = ready_times(deployment)
-            except (TtalkkakError, ValueError, OSError):
-                ready = []
-            for d in pending:
-                if len(ready) >= d["to_replicas"]:
-                    t = _ts(d["t"])
-                    done = ready[d["to_replicas"] - 1]
-                    if done >= t:
-                        d["ready_after_s"] = round((done - t).total_seconds())
-        by_file: dict[str, list[dict]] = {}
-        for d in rows:
-            by_file.setdefault(_ts(d["t"]).strftime("%Y-%m-%d"), []).append(d)
-        decisions_dir.mkdir(parents=True, exist_ok=True)
-        for day, items in by_file.items():
-            f = decisions_dir / f"{day}.jsonl"
-            new = [d for d in items if d in fresh]
-            old = [d for d in items if d not in fresh]
-            if f.exists() and old != _read_jsonl(f):
-                f.write_text(_jsonl(items), encoding="utf-8")
-            elif new:
-                with f.open("a", encoding="utf-8") as fh:
-                    fh.write(_jsonl(new))
-        return sorted(rows, key=lambda d: _ts(d["t"]), reverse=True)
+                return sync_decisions()[:10]
+            except (TtalkkakError, OSError, ValueError):
+                synced_at[0] = time.monotonic()
+        return saved_decisions()[:10]
 
     def live_snapshot() -> dict:
         errors: dict[str, str] = {}
@@ -259,7 +246,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         autoscale = {
             "enabled": None,
             "max_replicas": None,
-            "decisions": saved_decisions()[-10:],
+            "decisions": recent_decisions(),
         }
         if auto and deployment and str(auto.get("max_replicas", "")).isdigit():
             vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
@@ -286,7 +273,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         try:
             records = parse_capacity((cap or {}).get("capacity.json"))
             record = record_for(records, len(vllm_pods))
-        except ValueError:
+        except (TtalkkakError, ValueError):
             errors["capacity_record"] = "용량 기록을 읽지 못했습니다"
         limits = {}
         if deps.store is not None:

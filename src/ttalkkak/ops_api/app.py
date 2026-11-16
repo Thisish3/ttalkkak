@@ -1,7 +1,9 @@
 """`ttalkkak ops serve`: gateway auth (/authz), pricing, usage and per-tenant metrics."""
 
+import contextlib
 import hashlib
 import hmac
+import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -245,12 +247,11 @@ def build_serve_app(
         log_source = sources.log_files(logs)
     else:
         log_source = list
-    if prometheus_url and autoscale_namespace:
-        from ttalkkak.live.prom import Prom
-        from ttalkkak.ops_api.autoscaler import K8s, start_loop
-
-        start_loop(K8s(), Prom(prometheus_url, httpx.Client()), autoscale_namespace)
-    return create_ops_api(
+    if bool(prometheus_url) != bool(autoscale_namespace):
+        raise TtalkkakError(
+            "--prometheus-url과 --autoscale-namespace는 함께 지정해야 합니다"
+        )
+    app = create_ops_api(
         tenants=sources.json_file(tenants_path),
         cost=cost,
         log_source=log_source,
@@ -260,3 +261,30 @@ def build_serve_app(
             jwks=sources.jwks_url(jwks_url, httpx.Client(timeout=10)),
         ),
     )
+    if prometheus_url and autoscale_namespace:
+        _attach_autoscale_loop(app, prometheus_url, autoscale_namespace)
+    return app
+
+
+def _attach_autoscale_loop(app: Starlette, prometheus_url: str, namespace: str) -> None:
+    """Start the autoscale loop on app startup and stop it on shutdown."""
+    import httpx
+
+    from ttalkkak.live.prom import Prom
+    from ttalkkak.ops_api import autoscaler
+
+    stop = threading.Event()
+    app.state.autoscale_stop = stop
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_: Starlette):
+        stop.clear()
+        autoscaler.start_loop(
+            autoscaler.K8s(), Prom(prometheus_url, httpx.Client()), namespace, stop
+        )
+        try:
+            yield
+        finally:
+            stop.set()
+
+    app.router.lifespan_context = lifespan
