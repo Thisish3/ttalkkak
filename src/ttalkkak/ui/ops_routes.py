@@ -1,6 +1,7 @@
 """Operator tabs of the local UI: overview, cost, tenants, usage."""
 
 import csv
+import importlib.metadata
 import io
 import json
 import re
@@ -303,6 +304,19 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         return snap
 
     @guarded
+    @guarded
+    async def ping(request):
+        auto = await run_in_threadpool(configmap, "ttalkkak-autoscale") or {}
+        limit = str(auto.get("max_replicas", ""))
+        return JSONResponse(
+            {
+                "product": "ttalkkak",
+                "version": importlib.metadata.version("ttalkkak"),
+                "chip": deps.chip.name if deps.chip is not None else None,
+                "max_replicas": int(limit) if limit.isdigit() else None,
+            }
+        )
+
     async def live(request):
         return JSONResponse(await run_in_threadpool(live_snapshot))
 
@@ -485,6 +499,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         return Response(buf.getvalue(), media_type="text/csv; charset=utf-8")
 
     return [
+        Route("/api/ping", ping),
         Route("/api/live", live),
         Route("/api/loadtest", loadtest_start, methods=["POST"]),
         Route("/api/loadtest/{tid}", loadtest_status),

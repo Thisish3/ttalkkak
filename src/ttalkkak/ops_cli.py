@@ -129,7 +129,9 @@ ALLOW_HOST_OPT = typer.Option(
 
 @ops.command()
 def ui(
-    host: str = "127.0.0.1",
+    host: str | None = typer.Option(
+        None, help="열 주소. 기본 127.0.0.1 (--remote면 tailnet 주소)"
+    ),
     port: int = 8787,
     db: str | None = DB_OPT,
     chip: str | None = CHIP_OPT,
@@ -137,12 +139,37 @@ def ui(
         "http://127.0.0.1:9090", help="실시간 화면이 읽을 Prometheus 주소"
     ),
     allow_host: list[str] = ALLOW_HOST_OPT,
+    remote: bool = typer.Option(
+        False, "--remote", help="운영자 토큰으로 네트워크 접속을 받음 (데스크탑 앱용)"
+    ),
     namespace: str = typer.Option("ttalkkak", help="클러스터 네임스페이스"),
     gateway_url: str = typer.Option(
         "", help="부하 시험이 두드릴 게이트웨이 주소 (예: http://127.0.0.1:8080/v1)"
     ),
 ) -> None:
     """Open the local web UI (model search, run, report, export)."""
+    from ttalkkak.ui import auth
+
+    token_path = None
+    if remote:
+        token_path = _token_path()
+        if auth.load_token(token_path) is None:
+            typer.echo(
+                "오류: 운영자 토큰이 없습니다. `ttalkkak ops token new`로 먼저 만드세요",
+                err=True,
+            )
+            raise typer.Exit(2)
+        try:
+            host = auth.remote_host(host, _tailnet_lookup)
+        except TtalkkakError as err:
+            typer.echo(f"오류: {err}", err=True)
+            raise typer.Exit(err.exit_code) from err
+        typer.echo(
+            f"경고: {host}에 원격 접속을 엽니다. tailnet 안에서도 통신은 평문 HTTP이며 "
+            "토큰이 요청마다 전송됩니다. 신뢰하는 tailnet에서만 쓰세요.",
+            err=True,
+        )
+    host = host or "127.0.0.1"
     _need_extra("uvicorn", "huggingface_hub", "starlette")
     import uvicorn
     from huggingface_hub import HfApi
@@ -151,7 +178,7 @@ def ui(
     from ttalkkak.ui.app import UiDeps, create_app
 
     Deps, run_up, deps_kw = _serving(chip)
-    if host != "127.0.0.1":
+    if host != "127.0.0.1" and not remote:
         typer.echo(
             f"경고: {host}에 엽니다. 이 화면은 컨테이너를 띄우고 코드를 실행할 수 있으니 "
             "신뢰하는 네트워크에서만 쓰세요.",
@@ -187,11 +214,65 @@ def ui(
     )
     typer.echo(f"ttalkkak ui: http://{host}:{port}")
     uvicorn.run(
-        create_app(ROOT, deps, allowed_hosts(allow_host)),
+        create_app(ROOT, deps, allowed_hosts(allow_host), token_path),
         host=host,
         port=port,
         log_level="warning",
     )
+
+
+def _token_path() -> Path:
+    return TK_HOME / "console-token"
+
+
+def _tailnet_lookup() -> str | None:
+    from ttalkkak.ui.auth import tailscale_ipv4
+
+    return tailscale_ipv4()
+
+
+token = typer.Typer(no_args_is_help=True, help="콘솔 운영자 토큰 (데스크탑 앱 접속용)")
+ops.add_typer(token, name="token")
+
+
+@token.command("new")
+def token_new() -> None:
+    """Create (or replace) the operator token and print it once."""
+    from ttalkkak.ui import auth
+
+    path = _token_path()
+    replaced = path.exists()
+    value = auth.new_token()
+    auth.save_token(path, value)
+    if replaced:
+        typer.echo("기존 토큰은 더 이상 쓸 수 없습니다.", err=True)
+    typer.echo(value)
+
+
+@token.command("show")
+def token_show() -> None:
+    """Print the current operator token to the terminal."""
+    from ttalkkak.ui import auth
+
+    value = auth.load_token(_token_path())
+    if value is None:
+        typer.echo(
+            "오류: 토큰이 없습니다. `ttalkkak ops token new`로 만드세요", err=True
+        )
+        raise typer.Exit(1)
+    typer.echo(value)
+
+
+@token.command("revoke")
+def token_revoke() -> None:
+    """Delete the token file; running remote servers reject it at once."""
+    path = _token_path()
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        typer.echo("토큰이 이미 없습니다")
+        return
+    typer.echo("토큰을 폐기했습니다")
 
 
 def _ui_chip(chip: str | None, detect):

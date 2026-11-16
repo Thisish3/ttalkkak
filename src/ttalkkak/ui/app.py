@@ -8,12 +8,13 @@ from urllib.parse import urlsplit
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.export import write_export
 from ttalkkak.skills.loader import load_skill
+from ttalkkak.ui import auth
 from ttalkkak.ui.models import search_models
 from ttalkkak.ui.ops_routes import ops_routes
 from ttalkkak.ui.runs import Busy, RunManager
@@ -84,9 +85,58 @@ class _LocalOnly:
         return await self.app(scope, receive, send)
 
 
+class _RemoteToken:
+    """Operator-token boundary for remote mode: Bearer on /api/*, tauri CORS only."""
+
+    def __init__(self, app, token_path: Path):
+        self.app, self.token_path = app, token_path
+
+    def _cors(self, origin: str | None) -> list[tuple[bytes, bytes]]:
+        if origin not in auth.TAURI_ORIGINS:
+            return []
+        return [
+            (b"access-control-allow-origin", origin.encode()),
+            (b"vary", b"Origin"),
+        ]
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        req = Request(scope)
+        cors = self._cors(req.headers.get("origin"))
+        if req.method == "OPTIONS":
+            if not cors:
+                return await _err("forbidden origin", 403)(scope, receive, send)
+            resp = Response(status_code=204)
+            resp.headers["access-control-allow-methods"] = "GET, POST, OPTIONS"
+            resp.headers["access-control-allow-headers"] = "Authorization, Content-Type"
+            resp.headers["access-control-max-age"] = "600"
+            resp.raw_headers.extend(cors)
+            return await resp(scope, receive, send)
+        resp = None
+        if req.url.path.startswith("/api/"):
+            token = auth.load_token(self.token_path)
+            if token is None or not auth.check(req.headers.get("authorization"), token):
+                resp = _err(auth.UNAUTHORIZED, 401)
+        if resp is not None:
+            resp.raw_headers.extend(cors)
+            return await resp(scope, receive, send)
+
+        async def send_cors(message):
+            if message["type"] == "http.response.start" and cors:
+                message["headers"] = [*message.get("headers", []), *cors]
+            await send(message)
+
+        return await self.app(scope, receive, send_cors)
+
+
 def create_app(
-    root: Path, deps: UiDeps, allowed_hosts: frozenset[str] = LOCAL_HOSTS
+    root: Path,
+    deps: UiDeps,
+    allowed_hosts: frozenset[str] = LOCAL_HOSTS,
+    token_path: Path | None = None,
 ) -> Starlette:
+    """With `token_path` the app is remote: the token replaces the Host check."""
     runs = RunManager(root / "runs", deps.run_fn)
     page = (
         files("ttalkkak.ui").joinpath("static/index.html").read_text(encoding="utf-8")
@@ -195,7 +245,10 @@ def create_app(
         Route("/api/runs/{run_id}/export", export, methods=["POST"]),
         *ops_routes(root, deps, _body, _BadRequest),
     ], lifespan=lifespan)  # fmt: skip
-    app.add_middleware(_LocalOnly, allowed=allowed_hosts)
+    if token_path is None:
+        app.add_middleware(_LocalOnly, allowed=allowed_hosts)
+    else:
+        app.add_middleware(_RemoteToken, token_path=token_path)
     SYNC_HANDLERS.update(
         gpu=gpu, models=models, skills=skills, status=status, list_runs=list_runs
     )
