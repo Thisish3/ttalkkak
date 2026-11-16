@@ -15,13 +15,14 @@ REC = CapacityRecord(
 
 
 class FakeK8s:
-    def __init__(self, enabled="true", desired=1, ready=1, record=REC):
+    def __init__(self, enabled="true", desired=1, ready=1, record=REC, raw=None):
         self.cms = {
             "ttalkkak-autoscale": {
                 "enabled": enabled, "max_replicas": "3", "deployment": "vllm-x",
             },
             "ttalkkak-capacity": {
-                "capacity.json": record.model_dump_json() if record else "{}"
+                "capacity.json": raw
+                or (record.model_dump_json() if record else "{}")
             },
         }  # fmt: skip
         self.scale = (desired, ready)
@@ -141,3 +142,20 @@ def test_k8s_transport_scale_calls():
         None,
     )
     assert calls[1][0] == "PATCH" and calls[1][2] == {"spec": {"replicas": 3}}
+
+
+def _per_count(*recs):
+    return json.dumps({str(r.replicas): json.loads(r.model_dump_json()) for r in recs})
+
+
+def test_tick_uses_record_for_the_current_count():
+    rec2 = REC.model_copy(update={"replicas": 2, "max_tokens_per_min": 2000.0})
+    k8s = FakeK8s(desired=2, ready=2, raw=_per_count(REC, rec2))
+    d, _ = tick(k8s, FakeProm(tpm=500.0), State(), Rules(), T0, NS)
+    assert d.action == "hold" and d.reason == "조건 없음"
+
+
+def test_tick_holds_when_current_count_has_no_record():
+    k8s = FakeK8s(desired=2, ready=2, raw=_per_count(REC))
+    d, _ = tick(k8s, FakeProm(tpm=500.0), State(), Rules(), T0, NS)
+    assert d.action == "hold" and "용량 기록 없음" in d.reason

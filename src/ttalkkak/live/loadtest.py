@@ -14,6 +14,7 @@ from ttalkkak.capacity import (
     CapacityRecord,
     Stage,
     capacity_from_stages,
+    merge_capacity,
 )
 from ttalkkak.cost.runner import guidellm_cmd, parse_points, parse_stage_load
 from ttalkkak.errors import TtalkkakError
@@ -224,11 +225,19 @@ class LoadTestRunner:
             ttft_target_ms=self.ttft_target_ms,
             max_tokens_per_min=tpm,
         )
+        got = self.kubectl(
+            ["get", "configmap", CAPACITY_CONFIGMAP, "-n", self.namespace, "-o", "json"]
+        )
+        existing = None
+        if got.returncode == 0 and got.stdout:
+            existing = (json.loads(got.stdout).get("data") or {}).get("capacity.json")
+        elif got.returncode != 0 and "NotFound" not in (got.stderr or ""):
+            raise TtalkkakError("기존 용량 기록을 읽지 못해 저장하지 않았습니다")
         manifest = {
             "apiVersion": "v1",
             "kind": "ConfigMap",
             "metadata": {"name": CAPACITY_CONFIGMAP, "namespace": self.namespace},
-            "data": {"capacity.json": cap.model_dump_json()},
+            "data": {"capacity.json": merge_capacity(existing, cap)},
         }
         r = self.kubectl(["apply", "-f", "-"], input=json.dumps(manifest))
         if r.returncode != 0:

@@ -9,7 +9,12 @@ from datetime import UTC, datetime
 import httpx
 
 from ttalkkak.autoscale import Decision, Rules, Sample, State, decide
-from ttalkkak.capacity import CapacityRecord, idle_replicas, utilization
+from ttalkkak.capacity import (
+    idle_replicas,
+    parse_capacity,
+    record_for,
+    utilization,
+)
 from ttalkkak.live import prom as q
 from ttalkkak.ops_api.sources import SA_DIR
 
@@ -80,10 +85,8 @@ def _sample(k8s, prom, auto: dict, ns: str, now: datetime) -> tuple[Sample, str]
     model = next((m["model_name"] for m, _ in rows if m.get("model_name")), "")
     tpm = prom.instant(q.TPM)
     waiting = int(sum(v for _, v in prom.instant(q.WAITING)))
-    raw = json.loads(
-        k8s.get_configmap(ns, "ttalkkak-capacity").get("capacity.json") or "{}"
-    )
-    record = CapacityRecord.model_validate(raw) if raw else None
+    cap = k8s.get_configmap(ns, "ttalkkak-capacity").get("capacity.json")
+    record = record_for(parse_capacity(cap), desired)
     pct = None
     if tpm and model:
         pct = utilization(tpm[0][1], record, desired, model)["pct"]

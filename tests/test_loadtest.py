@@ -88,11 +88,11 @@ def test_runner_writes_record_and_capacity(tmp_path, store):
     assert [s["users"] for s in rec["stages"]] == [1, 5, 10]
     assert rec["replicas"] == 2 and rec["error"] is None
     assert rec["capacity_tpm"] == pytest.approx(3000 * 10 / 15 * 60)
-    ((args, manifest),) = k.calls
+    ((args, manifest),) = [c for c in k.calls if c[0][0] == "apply"]
     assert args == ["apply", "-f", "-"]
     cm = json.loads(manifest)
     assert cm["metadata"]["name"] == "ttalkkak-capacity"
-    cap = json.loads(cm["data"]["capacity.json"])
+    cap = json.loads(cm["data"]["capacity.json"])["2"]
     assert cap["loadtest_id"] == tid and cap["replicas"] == 2
     assert r.list()[0]["id"] == tid
 
@@ -175,3 +175,24 @@ def test_default_clock_is_timezone_aware(tmp_path, store):
     r = LoadTestRunner(tmp_path, store, "http://gw", "m", run=good_run, sync=True)
     tid = r.start(1, 1, True)
     assert datetime.fromisoformat(r.status(tid)["created_at"]).tzinfo is not None
+
+
+def test_runner_merge_keeps_other_counts(tmp_path, store):
+    old = json.loads(
+        '{"loadtest_id":"old","created_at":"2026-11-01T00:00:00Z","replicas":1,'
+        '"model":"m","ttft_target_ms":500,"max_tokens_per_min":10.0}'
+    )
+
+    class K(Kubectl):
+        def __call__(self, args, input=None):
+            r = super().__call__(args, input)
+            if args[0] == "get":
+                cm = {"data": {"capacity.json": json.dumps({"1": old})}}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(cm), stderr="")
+            return r
+
+    k = K()
+    tid = runner(tmp_path, store, good_run, k).start(10, replicas=2, autoscale_on=False)
+    (_, manifest) = next(c for c in k.calls if c[0][0] == "apply")
+    cap = json.loads(json.loads(manifest)["data"]["capacity.json"])
+    assert cap["1"]["loadtest_id"] == "old" and cap["2"]["loadtest_id"] == tid

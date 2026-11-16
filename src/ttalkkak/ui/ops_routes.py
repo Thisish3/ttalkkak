@@ -15,7 +15,12 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from ttalkkak.billing.bill import aggregate, invoice_rows, read_log
-from ttalkkak.capacity import CapacityRecord
+from ttalkkak.capacity import (
+    missing_loadtest_counts,
+    missing_loadtest_text,
+    parse_capacity,
+    record_for,
+)
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
@@ -276,11 +281,11 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
                 errors["autoscale"] += (
                     ". Prometheus도 응답하지 않아 vLLM 파드를 찾지 못했습니다 (0개로 표시)"
                 )
-        record = None
+        record, records = None, {}
         cap = configmap("ttalkkak-capacity")
         try:
-            raw = json.loads((cap or {}).get("capacity.json") or "{}")
-            record = CapacityRecord.model_validate(raw) if raw else None
+            records = parse_capacity((cap or {}).get("capacity.json"))
+            record = record_for(records, len(vllm_pods))
         except ValueError:
             errors["capacity_record"] = "용량 기록을 읽지 못했습니다"
         limits = {}
@@ -304,6 +309,8 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         snap = build_snapshot(
             prom, vllm_pods, logs, limits, record, chip, model,
             datetime.now(UTC), autoscale, cost=deps.cost_config,
+            missing_loadtest=missing_loadtest_counts(records, autoscale["max_replicas"] or 0),
+            missing_text=missing_loadtest_text(records, autoscale["max_replicas"] or 0),
         )  # fmt: skip
         snap["errors"] = {**errors, **snap["errors"]}
         return snap

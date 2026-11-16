@@ -252,3 +252,31 @@ def test_up_decision_gets_ready_after_s(tmp_path):
     assert c.get("/api/autoscale/decisions").json()[0]["ready_after_s"] == 90
     line = (tmp_path / "runs/autoscale/2026-11-16.jsonl").read_text()
     assert json.loads(line)["ready_after_s"] == 90
+
+
+def test_live_exposes_missing_capacity_counts(tmp_path):
+    from types import SimpleNamespace
+
+    rec = {
+        "loadtest_id": "l1", "created_at": "2026-11-16T00:00:00Z", "replicas": 1,
+        "model": "m", "ttft_target_ms": 500, "max_tokens_per_min": 1000.0,
+    }  # fmt: skip
+
+    class K(Kc):
+        def __call__(self, args, input=None):
+            if args[:3] == ["get", "configmap", "ttalkkak-capacity"]:
+                cm = {"data": {"capacity.json": json.dumps({"1": rec})}}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(cm), stderr="")
+            return super().__call__(args, input)
+
+    deps = UiDeps(
+        list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
+        cluster_status=lambda: [
+            {"name": "vllm-qwen-abc", "ready": "1/1", "restarts": 0, "phase": "Running"}
+        ],
+        kubectl=K(),
+    )  # fmt: skip
+    c = TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
+    cap = c.get("/api/live").json()["capacity"]
+    assert cap["missing_loadtest"] == [2, 3]
+    assert cap["missing_text"] == "부하 시험 필요: 2개, 3개"

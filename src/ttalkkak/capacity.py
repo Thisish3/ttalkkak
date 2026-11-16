@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 
@@ -22,6 +23,52 @@ class CapacityRecord(BaseModel):
     model: str
     ttft_target_ms: float
     max_tokens_per_min: float | None
+
+
+def parse_capacity(raw: str | None) -> dict[int, CapacityRecord]:
+    """Records by replica count from the ConfigMap value.
+
+    New format: {"<replicas>": record, ...}. The old single record is read as
+    the entry for its own replica count.
+    """
+    data = json.loads(raw) if raw else {}
+    if not data:
+        return {}
+    if "replicas" in data:
+        rec = CapacityRecord.model_validate(data)
+        return {rec.replicas: rec}
+    return {int(n): CapacityRecord.model_validate(r) for n, r in data.items()}
+
+
+def merge_capacity(raw: str | None, rec: CapacityRecord) -> str:
+    """ConfigMap value with rec replacing only the entry for its replica count."""
+    records = {**parse_capacity(raw), rec.replicas: rec}
+    return json.dumps(
+        {str(n): json.loads(r.model_dump_json()) for n, r in sorted(records.items())}
+    )
+
+
+def record_for(records: dict[int, CapacityRecord], replicas: int):
+    return records.get(replicas)
+
+
+def capacity_counts(records: dict[int, CapacityRecord]) -> list[int]:
+    return sorted(records)
+
+
+def missing_loadtest_counts(
+    records: dict[int, CapacityRecord], max_replicas: int
+) -> list[int]:
+    return [n for n in range(1, max_replicas + 1) if n not in records]
+
+
+def missing_loadtest_text(
+    records: dict[int, CapacityRecord], max_replicas: int
+) -> str | None:
+    missing = missing_loadtest_counts(records, max_replicas)
+    if not missing:
+        return None
+    return "부하 시험 필요: " + ", ".join(f"{n}개" for n in missing)
 
 
 def capacity_from_stages(stages: list[Stage], target_ms: float) -> float | None:

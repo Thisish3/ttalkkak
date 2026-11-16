@@ -190,6 +190,8 @@ def build_snapshot(
     now: datetime,
     autoscale: dict,
     cost: CostConfig | None = None,
+    missing_loadtest: list[int] | None = None,
+    missing_text: str | None = None,
 ) -> dict:
     errors: dict[str, str] = {}
     if not isinstance(prom, ShortCircuit):
@@ -203,6 +205,8 @@ def build_snapshot(
     )
     max_replicas = autoscale.get("max_replicas") or len(pods)
     cap = _capacity(prom, capacity, len(pods), model, errors)
+    cap["missing_loadtest"] = missing_loadtest or []
+    cap["missing_text"] = missing_text
     cap["signals"] = _signals(prom, tenants, ready, max_replicas, now, errors)
     replicas = _replicas(prom, pods, chip, errors)
     return {

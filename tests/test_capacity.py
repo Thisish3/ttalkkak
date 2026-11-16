@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -188,3 +189,42 @@ def test_utilization_not_capped():
 def test_period_summary_first_value_over_edge_counts_once():
     s = [(NOW + timedelta(minutes=i), v) for i, v in enumerate([95, 99, 50])]
     assert period_summary(s)["over_edge"] == 1
+
+
+def _rec(n, tpm=1000.0):
+    from ttalkkak.capacity import CapacityRecord
+
+    return CapacityRecord(
+        loadtest_id=f"l{n}", created_at=datetime(2026, 11, 16, tzinfo=UTC),
+        replicas=n, model="m", ttft_target_ms=500, max_tokens_per_min=tpm,
+    )  # fmt: skip
+
+
+def test_capacity_records_per_count_and_old_format():
+    from ttalkkak.capacity import (
+        capacity_counts,
+        merge_capacity,
+        missing_loadtest_text,
+        parse_capacity,
+        record_for,
+    )
+
+    assert parse_capacity(None) == {} and parse_capacity("{}") == {}
+    old = _rec(2).model_dump_json()
+    recs = parse_capacity(old)
+    assert capacity_counts(recs) == [2] and record_for(recs, 2).loadtest_id == "l2"
+    assert record_for(recs, 1) is None
+    merged = parse_capacity(merge_capacity(old, _rec(1)))
+    assert capacity_counts(merged) == [1, 2]
+    again = parse_capacity(
+        merge_capacity(
+            json.dumps({"1": json.loads(_rec(1).model_dump_json())}), _rec(1, 2000.0)
+        )
+    )
+    assert record_for(again, 1).max_tokens_per_min == 2000.0
+    assert missing_loadtest_text(merged, 3) == "부하 시험 필요: 3개"
+    assert (
+        missing_loadtest_text(parse_capacity(None), 3)
+        == "부하 시험 필요: 1개, 2개, 3개"
+    )
+    assert missing_loadtest_text(merged, 2) is None
