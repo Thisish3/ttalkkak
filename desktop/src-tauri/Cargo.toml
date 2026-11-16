@@ -1,0 +1,25 @@
+[package]
+name = "ttalkkak-console"
+version = "0.1.0"
+description = "ttalkkak 콘솔"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-window-state = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+opt-level = "s"

@@ -187,3 +187,18 @@ def test_local_run_without_gpu_is_refused_but_nim_is_allowed(tmp_path):
         c.post("/api/runs", json={"model": "nim:meta/llama", "skills": []}).status_code
         == 200
     )
+
+
+def test_packaged_web_files_match_desktop_web(tmp_path):
+    root = Path(__file__).parent.parent
+    c = make(tmp_path)
+    for name, kind in (
+        ("app.css", "text/css"),
+        ("app.js", "javascript"),
+        ("connect.html", "text/html"),
+    ):
+        packaged = root / "src/ttalkkak/ui/static" / name
+        assert packaged.read_bytes() == (root / "desktop/web" / name).read_bytes()
+        r = c.get("/" + name)
+        assert r.status_code == 200 and kind in r.headers["content-type"]
+        assert r.content == packaged.read_bytes()

@@ -1,0 +1,127 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod conn;
+mod http;
+
+use conn::{Connection, Keychain};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
+
+const DOCS_URL: &str = "https://github.com/Thisish3/ttalkkak#readme";
+
+fn config_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().app_config_dir().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_connection(app: AppHandle, url: String, token: String) -> Result<(), String> {
+    conn::save(&config_dir(&app)?, &Keychain, &url, &token)
+}
+
+#[tauri::command]
+fn load_connection(app: AppHandle) -> Option<Connection> {
+    conn::load(&config_dir(&app).ok()?)
+}
+
+#[tauri::command]
+fn forget_connection(app: AppHandle) -> Result<(), String> {
+    conn::forget(&config_dir(&app)?, &Keychain)
+}
+
+/// Connection test for the entered (not yet saved) address.
+#[tauri::command]
+async fn ping_server(url: String, token: String) -> Result<serde_json::Value, String> {
+    let base = conn::normalize_url(&url)?;
+    let res = http::send(&base, token.trim(), "GET", "/api/ping", None).await?;
+    http::classify_ping(res.status, &res.body)
+}
+
+/// Requests to the saved server only; the token never reaches the page.
+#[tauri::command]
+async fn api_request(
+    app: AppHandle,
+    path: String,
+    method: String,
+    body: Option<String>,
+) -> Result<http::ApiResponse, String> {
+    let dir = config_dir(&app)?;
+    let (base, token) = conn::load_with_token(&dir, &Keychain)
+        .ok_or_else(|| "저장된 서버 연결이 없습니다".to_string())?;
+    http::send(&base, &token, &method.to_uppercase(), &path, body).await
+}
+
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
+    let app_menu = Submenu::with_items(
+        app,
+        "앱",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some("ttalkkak 콘솔 정보"), None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, Some("종료"))?,
+        ],
+    )?;
+    let conn_menu = Submenu::with_items(
+        app,
+        "연결",
+        true,
+        &[
+            &item("change_server", "서버 바꾸기")?,
+            &item("disconnect", "연결 끊기")?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        "보기",
+        true,
+        &[
+            &item("reload", "새로 고침")?,
+            &PredefinedMenuItem::fullscreen(app, Some("전체 화면"))?,
+        ],
+    )?;
+    let help_menu = Submenu::with_items(app, "도움말", true, &[&item("docs", "문서 열기")?])?;
+    Menu::with_items(app, &[&app_menu, &conn_menu, &view_menu, &help_menu])
+}
+
+fn on_menu(app: &AppHandle, id: &str) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    match id {
+        "change_server" => {
+            let _ = win.eval("location.replace('connect.html')");
+        }
+        "disconnect" => {
+            if let Err(e) = conn::forget(&config_dir(app).unwrap_or_default(), &Keychain) {
+                eprintln!("연결 끊기 실패: {e}");
+            }
+            let _ = win.eval("location.replace('connect.html')");
+        }
+        "reload" => {
+            let _ = win.eval("location.reload()");
+        }
+        "docs" => {
+            let _ = app.opener().open_url(DOCS_URL, None::<&str>);
+        }
+        _ => {}
+    }
+}
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
+        .menu(build_menu)
+        .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
+        .invoke_handler(tauri::generate_handler![
+            save_connection,
+            load_connection,
+            forget_connection,
+            ping_server,
+            api_request
+        ])
+        .run(tauri::generate_context!())
+        .expect("ttalkkak 콘솔을 시작하지 못했습니다");
+}

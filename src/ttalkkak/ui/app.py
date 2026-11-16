@@ -151,6 +151,14 @@ def create_app(
     def index(request: Request):
         return HTMLResponse(page)
 
+    def asset(name: str, media_type: str):
+        body = files("ttalkkak.ui").joinpath(f"static/{name}").read_bytes()
+
+        def handler(request: Request):
+            return Response(body, media_type=media_type)
+
+        return handler
+
     def gpu(request: Request):
         g = deps.detect_gpu()
         return JSONResponse(g.model_dump() if g else None)
@@ -242,6 +250,9 @@ def create_app(
 
     app = Starlette(routes=[
         Route("/", index),
+        Route("/app.css", asset("app.css", "text/css")),
+        Route("/app.js", asset("app.js", "text/javascript")),
+        Route("/connect.html", asset("connect.html", "text/html")),
         Route("/api/gpu", gpu),
         Route("/api/models", models),
         Route("/api/skills", skills),

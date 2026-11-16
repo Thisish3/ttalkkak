@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ttalkkak 콘솔</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <header class="statusbar">
+    <span class="server" id="server"></span>
+    <span class="chip" id="chip" hidden></span>
+    <span class="spacer"></span>
+    <span class="conn" id="conn" data-state="warn">▲ 연결 확인 중</span>
+  </header>
+  <nav class="sidebar" id="nav" aria-label="화면"></nav>
+  <main>
+    <section class="panel" id="panel-live"><h1>실시간</h1><p class="empty">실시간 화면은 다음 단계에서 옮겨 옵니다.</p></section>
+    <section class="panel" id="panel-overview" hidden><h1>개요</h1><p class="empty">다음 단계에서 옮겨 옵니다.</p></section>
+    <section class="panel" id="panel-cost" hidden><h1>원가</h1><p class="empty">다음 단계에서 옮겨 옵니다.</p></section>
+    <section class="panel" id="panel-tenants" hidden><h1>테넌트</h1><p class="empty">다음 단계에서 옮겨 옵니다.</p></section>
+    <section class="panel" id="panel-usage" hidden><h1>사용량</h1><p class="empty">다음 단계에서 옮겨 옵니다.</p></section>
+    <section class="panel" id="panel-runs" hidden><h1>서빙 실행</h1><p class="empty">다음 단계에서 옮겨 옵니다.</p></section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
