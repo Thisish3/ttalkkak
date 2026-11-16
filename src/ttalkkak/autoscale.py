@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -17,6 +18,7 @@ class Rules(BaseModel):
     idle_after_pct: float = 60.0
     cool_up_s: int = 300
     cool_down_s: int = 600
+    max_gap_s: int = 60
 
 
 class Sample(BaseModel):
@@ -42,22 +44,41 @@ class Decision(BaseModel):
     reason: str
 
 
-def _trim(history: list[Sample], now: datetime, keep_s: int) -> list[Sample]:
-    """keep_s초 안의 샘플과, 창 길이를 확인할 수 있게 바로 바깥의 샘플 하나를 남긴다."""
-    cutoff = now - timedelta(seconds=keep_s)
-    inside = [h for h in history if h.t >= cutoff]
+def _split(
+    history: list[Sample], now: datetime, span_s: int
+) -> tuple[Sample | None, list[Sample]]:
+    """span_s초 안의 샘플과 그 바로 바깥의 가장 최근 샘플(기준점)로 나눈다."""
+    cutoff = now - timedelta(seconds=span_s)
     outside = [h for h in history if h.t < cutoff]
-    return outside[-1:] + inside
+    inside = [h for h in history if h.t >= cutoff]
+    return (outside[-1] if outside else None), inside
 
 
-def _sustained(history: list[Sample], now: datetime, for_s: int, ok) -> bool:
-    """최근 for_s초의 모든 샘플이 조건을 만족하고 기록이 for_s초 넘게 이어졌는가."""
-    cutoff = now - timedelta(seconds=for_s)
-    window = [h for h in history if h.t >= cutoff]
-    before = [h for h in history if h.t < cutoff]
-    if not before:
+def _trim(history: list[Sample], now: datetime, keep_s: int) -> list[Sample]:
+    anchor, inside = _split(history, now, keep_s)
+    return ([anchor] if anchor else []) + inside
+
+
+def _sustained(
+    history: list[Sample],
+    now: datetime,
+    for_s: int,
+    max_gap_s: int,
+    ok: Callable[[Sample], bool],
+) -> bool:
+    """마지막 간격 끊김 뒤의 모든 샘플이 조건을 만족하고 for_s초 넘게 이어졌는가."""
+    anchor, inside = _split(history, now, for_s)
+    if anchor is None:
         return False
-    return all(ok(h) for h in window + before[-1:])
+    run = [anchor, *inside]
+    start = 0
+    for i in range(1, len(run)):
+        if (run[i].t - run[i - 1].t).total_seconds() > max_gap_s:
+            start = i
+    run = run[start:]
+    if (now - run[0].t).total_seconds() <= for_s:
+        return False
+    return all(ok(h) for h in run)
 
 
 def _minutes(sec: int) -> str:
@@ -88,7 +109,9 @@ def decide(
             new_state,
         )
 
-    def change(action: Literal["up", "down"], to: int, reason: str):
+    def change(
+        action: Literal["up", "down"], to: int, reason: str
+    ) -> tuple[Decision, State]:
         st = new_state.model_copy(update={"last_change": s.t, "last_dir": action})
         return (
             Decision(
@@ -118,7 +141,7 @@ def decide(
     def up_ok(h: Sample) -> bool:
         return h.util_pct is not None and (h.util_pct >= rules.up_pct or h.waiting > 0)
 
-    if _sustained(history, s.t, rules.up_for_s, up_ok):
+    if _sustained(history, s.t, rules.up_for_s, rules.max_gap_s, up_ok):
         if s.desired >= max_r:
             return hold(f"늘리려 했으나 최대 복제본 {max_r}개")
         span = _minutes(rules.up_for_s)
@@ -133,14 +156,15 @@ def decide(
             h.util_pct is not None and h.util_pct <= rules.down_pct and h.waiting == 0
         )
 
-    if _sustained(history, s.t, rules.down_for_s, down_ok):
+    if _sustained(history, s.t, rules.down_for_s, rules.max_gap_s, down_ok):
         if s.desired <= min_r:
             return hold(f"줄이려 했으나 최소 복제본 {min_r}개")
         span = _minutes(rules.down_for_s)
         return change(
             "down",
             s.desired - 1,
-            f"용량 사용률 {s.util_pct:g} %가 {span} 넘게 계속 {rules.down_pct:g} % 이하",
+            f"용량 사용률 {rules.down_pct:g} % 이하가 {span} 넘게 계속 "
+            f"(지금 {s.util_pct:g} %)",
         )
 
     if s.idle_replicas > 0 and s.waiting == 0 and s.desired > min_r and s.desired > 1:

@@ -123,3 +123,54 @@ def test_exactly_two_minutes_holds():
 def test_idle_hold_while_requests_wait():
     d, _ = run([sample(0, util=25, waiting=1, ready=3, desired=3, idle=1)])
     assert d.action == "hold"
+
+
+def test_gap_breaks_sustained_window():
+    d, _ = run([sample(0, util=90), sample(5000, util=90)])
+    assert d.action == "hold"
+
+
+def test_ten_second_samples_still_up():
+    d, _ = run([sample(i, util=90) for i in range(0, 140, 10)])
+    assert d.action == "up"
+
+
+def test_gap_inside_window_breaks_it():
+    d, _ = run([sample(i, util=90) for i in (0, 10, 20, 30, 100, 110, 120, 125)])
+    assert d.action == "hold"
+
+
+def test_decide_does_not_mutate_state():
+    st = State(history=[sample(0, util=90)])
+    before = st.model_copy(deep=True)
+    decide(st, sample(10, util=90), Rules(), max_r=3)
+    assert st == before
+
+
+def test_idle_hold_at_min_replicas():
+    d, _ = run([sample(0, util=5, idle=1)], min_r=1)
+    assert d.action == "hold"
+    d, _ = run([sample(0, util=5, ready=2, desired=2, idle=1)], min_r=2)
+    assert d.action == "hold"
+
+
+def test_idle_down_to_min_allowed():
+    d, _ = run([sample(0, util=20, ready=2, desired=2, idle=1)], min_r=1)
+    assert d.action == "down"
+    assert d.to_replicas == 1
+
+
+def test_cooldown_after_down_ends_at_600s():
+    st = State(last_change=T0, last_dir="down")
+    busy = {"util": 95, "waiting": 3}
+    d, _ = run([sample(599, **busy)], state=st)
+    assert d.action == "hold"
+    assert "쿨다운" in d.reason
+    hist = [sample(i, **busy) for i in range(470, 602, 10)]
+    d, _ = run(hist, state=st)
+    assert d.action == "up"
+
+
+def test_down_reason_states_window():
+    d, _ = run([sample(i, util=22, ready=2, desired=2) for i in range(602)])
+    assert "30 % 이하" in d.reason and "22 %" in d.reason
