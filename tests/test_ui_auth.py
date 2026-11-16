@@ -124,6 +124,9 @@ def test_ping_payload(tmp_path, token_path):
     body = r.json()
     assert set(body) == {"product", "version", "chip", "max_replicas"}
     assert body["product"] == "ttalkkak" and body["chip"] == "nvidia-gpu"
+    import importlib.metadata
+
+    assert body["version"] == importlib.metadata.version("ttalkkak")
 
 
 def test_ping_max_replicas_from_configmap(tmp_path, token_path):
@@ -245,3 +248,140 @@ def test_cli_remote_explicit_host(served, monkeypatch):
     r = CliRunner().invoke(ops_cli.ops, ["ui", "--remote", "--host", "0.0.0.0"])
     assert r.exit_code == 0, r.output
     assert served["host"] == "0.0.0.0"
+
+
+# ---- fix round 1 ----
+
+
+def _is_guarded(fn):
+    return fn.__qualname__.endswith("guarded.<locals>.handler")
+
+
+def test_every_ops_route_is_guarded_exactly_once(tmp_path):
+    from ttalkkak.ui.app import _BadRequest, _body
+    from ttalkkak.ui.ops_routes import ops_routes
+
+    for route in ops_routes(tmp_path, deps(), _body, _BadRequest):
+        fn = route.endpoint
+        assert _is_guarded(fn), route.path
+        inner = [c.cell_contents for c in fn.__closure__ or ()]
+        assert not any(callable(x) and _is_guarded(x) for x in inner), route.path
+
+
+def test_live_error_is_guarded_json(tmp_path, monkeypatch):
+    from ttalkkak.ui import ops_routes
+
+    def boom(*a, **k):
+        raise TtalkkakError("스냅샷 실패", 503)
+
+    monkeypatch.setattr(ops_routes, "build_snapshot", boom)
+    c = TestClient(create_app(tmp_path, deps()), base_url="http://127.0.0.1")
+    r = c.get("/api/live")
+    assert r.status_code == 503
+    assert r.json() == {"error": "스냅샷 실패"}
+
+
+class FakeProm:
+    def instant(self, q):
+        return [({"pod": "vllm-1", "model_name": "m"}, 1.0)]
+
+    range = instant
+
+
+def _ping(tmp_path, token_path, d):
+    c = TestClient(create_app(tmp_path, d, token_path=token_path))
+    return c.get("/api/ping", headers=bearer(auth.load_token(token_path)))
+
+
+def test_ping_max_replicas_falls_back_to_running_pods(tmp_path, token_path):
+    d = deps()
+    d.prometheus = FakeProm()
+    d.cluster_status = lambda: [
+        {"name": "vllm-1", "ready": "1/1", "restarts": 0, "phase": "Running"},
+        {"name": "other", "ready": "1/1", "restarts": 0, "phase": "Running"},
+    ]
+    assert _ping(tmp_path, token_path, d).json()["max_replicas"] == 1
+
+
+def test_ping_max_replicas_null_when_nothing_readable(tmp_path, token_path):
+    assert _ping(tmp_path, token_path, deps()).json()["max_replicas"] is None
+
+
+def test_ping_version_matches_package(tmp_path, token_path):
+    import importlib.metadata
+
+    body = _ping(tmp_path, token_path, deps()).json()
+    assert body["version"] == importlib.metadata.version("ttalkkak")
+
+
+def test_ping_version_unknown_when_not_installed(tmp_path, token_path, monkeypatch):
+    import importlib.metadata
+
+    def missing(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", missing)
+    r = _ping(tmp_path, token_path, deps())
+    assert r.status_code == 200 and r.json()["version"] == "unknown"
+
+
+def test_save_token_replaces_symlink_not_follows(tmp_path):
+    victim = tmp_path / "victim"
+    victim.write_text("keep")
+    p = tmp_path / "home" / "console-token"
+    p.parent.mkdir()
+    p.symlink_to(victim)
+    auth.save_token(p, "ttk_op_x")
+    assert victim.read_text() == "keep"
+    assert not p.is_symlink() and p.read_text().strip() == "ttk_op_x"
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert [f.name for f in p.parent.iterdir()] == ["console-token"]
+
+
+def test_preflight_rejection_body_is_korean(remote):
+    r = remote.options("/api/gpu", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403
+    assert r.json() == {"error": "허용되지 않은 출처입니다"}
+
+
+def test_vary_origin_whenever_origin_seen(remote, token_path):
+    h = bearer(auth.load_token(token_path))
+    for resp in (
+        remote.get("/api/gpu", headers={**h, "Origin": "https://evil.example"}),
+        remote.get("/api/gpu", headers={**h, "Origin": TAURI}),
+        remote.get("/api/gpu", headers={"Origin": "https://evil.example"}),
+        remote.options("/api/gpu", headers={"Origin": "https://evil.example"}),
+    ):
+        assert "Origin" in resp.headers["vary"]
+
+
+def test_websocket_scope_needs_token(tmp_path, token_path):
+    import asyncio
+
+    from ttalkkak.ui.app import _RemoteToken
+
+    reached = []
+
+    async def inner(scope, receive, send):
+        reached.append(scope["type"])
+
+    mw = _RemoteToken(inner, token_path)
+
+    def run(headers):
+        sent = []
+
+        async def send(m):
+            sent.append(m)
+
+        async def receive():
+            return {"type": "websocket.connect"}
+
+        scope = {"type": "websocket", "path": "/api/ws", "headers": headers}
+        asyncio.run(mw(scope, receive, send))
+        return sent
+
+    sent = run([])
+    assert reached == [] and sent[0]["type"] == "websocket.close"
+    token = auth.load_token(token_path)
+    run([(b"authorization", f"Bearer {token}".encode())])
+    assert reached == ["websocket"]

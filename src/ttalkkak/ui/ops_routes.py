@@ -303,20 +303,42 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         snap["errors"] = {**errors, **snap["errors"]}
         return snap
 
-    @guarded
+    def current_replicas() -> int | None:
+        """vLLM pods Prometheus sees running among the cluster's pods (as /api/live)."""
+        try:
+            pods = deps.cluster_status() if deps.cluster_status else []
+            prom = deps.prometheus if deps.prometheus is not None else _NoProm()
+            rows = prom.instant(live_prom.RUNNING)
+        except Exception:  # noqa: BLE001 - ping must answer
+            return None
+        running = {m["pod"] for m, _ in rows if m.get("pod")}
+        return len([p for p in pods if p["name"] in running])
+
+    def package_version() -> str:
+        try:
+            return importlib.metadata.version("ttalkkak")
+        except importlib.metadata.PackageNotFoundError:
+            return "unknown"
+
     @guarded
     async def ping(request):
         auto = await run_in_threadpool(configmap, "ttalkkak-autoscale") or {}
         limit = str(auto.get("max_replicas", ""))
-        return JSONResponse(
-            {
-                "product": "ttalkkak",
-                "version": importlib.metadata.version("ttalkkak"),
-                "chip": deps.chip.name if deps.chip is not None else None,
-                "max_replicas": int(limit) if limit.isdigit() else None,
-            }
-        )
+        body = {
+            "product": "ttalkkak",
+            "version": package_version(),
+            "chip": deps.chip.name if deps.chip is not None else None,
+            "max_replicas": int(limit) if limit.isdigit() else None,
+        }
+        if body["max_replicas"] is None:
+            body["max_replicas"] = await run_in_threadpool(current_replicas)
+            if body["max_replicas"] is not None:
+                body["error"] = (
+                    "ttalkkak-autoscale 설정을 읽지 못해 현재 복제본 수를 쓰고 있습니다"
+                )
+        return JSONResponse(body)
 
+    @guarded
     async def live(request):
         return JSONResponse(await run_in_threadpool(live_snapshot))
 

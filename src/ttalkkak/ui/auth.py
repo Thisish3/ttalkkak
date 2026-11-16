@@ -2,12 +2,12 @@
 
 import hmac
 import ipaddress
+import os
 import secrets
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from ttalkkak.client.config import write_private
 from ttalkkak.errors import TtalkkakError
 
 TOKEN_PREFIX = "ttk_op_"
@@ -23,7 +23,20 @@ def new_token() -> str:
 
 
 def save_token(path: Path, token: str) -> None:
-    write_private(path, token + "\n")
+    """Write atomically: 0600 temp file in the same dir, fsync, rename over."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(token + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def load_token(path: Path) -> str | None:

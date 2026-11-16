@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
@@ -92,38 +93,43 @@ class _RemoteToken:
         self.app, self.token_path = app, token_path
 
     def _cors(self, origin: str | None) -> list[tuple[bytes, bytes]]:
+        vary = (b"vary", b"Origin")
         if origin not in auth.TAURI_ORIGINS:
-            return []
-        return [
-            (b"access-control-allow-origin", origin.encode()),
-            (b"vary", b"Origin"),
-        ]
+            return [vary]
+        return [(b"access-control-allow-origin", origin.encode()), vary]
+
+    def _authorized(self, headers) -> bool:
+        token = auth.load_token(self.token_path)
+        return token is not None and auth.check(headers.get("authorization"), token)
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            if self._authorized(Headers(scope=scope)):
+                return await self.app(scope, receive, send)
+            return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         req = Request(scope)
         cors = self._cors(req.headers.get("origin"))
         if req.method == "OPTIONS":
-            if not cors:
-                return await _err("forbidden origin", 403)(scope, receive, send)
-            resp = Response(status_code=204)
-            resp.headers["access-control-allow-methods"] = "GET, POST, OPTIONS"
-            resp.headers["access-control-allow-headers"] = "Authorization, Content-Type"
-            resp.headers["access-control-max-age"] = "600"
+            if len(cors) == 1:
+                resp = _err("허용되지 않은 출처입니다", 403)
+            else:
+                resp = Response(status_code=204)
+                resp.headers["access-control-allow-methods"] = "GET, POST, OPTIONS"
+                resp.headers["access-control-allow-headers"] = (
+                    "Authorization, Content-Type"
+                )
+                resp.headers["access-control-max-age"] = "600"
             resp.raw_headers.extend(cors)
             return await resp(scope, receive, send)
-        resp = None
-        if req.url.path.startswith("/api/"):
-            token = auth.load_token(self.token_path)
-            if token is None or not auth.check(req.headers.get("authorization"), token):
-                resp = _err(auth.UNAUTHORIZED, 401)
-        if resp is not None:
+        if req.url.path.startswith("/api/") and not self._authorized(req.headers):
+            resp = _err(auth.UNAUTHORIZED, 401)
             resp.raw_headers.extend(cors)
             return await resp(scope, receive, send)
 
         async def send_cors(message):
-            if message["type"] == "http.response.start" and cors:
+            if message["type"] == "http.response.start":
                 message["headers"] = [*message.get("headers", []), *cors]
             await send(message)
 
