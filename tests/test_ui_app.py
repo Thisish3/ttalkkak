@@ -41,7 +41,7 @@ def make(tmp_path, list_models=None, run_fn=None, gpu=GPU8):
 
 def test_index_page(tmp_path):
     r = make(tmp_path).get("/")
-    assert r.status_code == 200 and "/api/models" in r.text and "<html" in r.text
+    assert r.status_code == 200 and "app.js" in r.text and "<html" in r.text
 
 
 def test_gpu_and_models(tmp_path):
@@ -193,6 +193,7 @@ def test_packaged_web_files_match_desktop_web(tmp_path):
     root = Path(__file__).parent.parent
     c = make(tmp_path)
     for name, kind in (
+        ("index.html", "text/html"),
         ("app.css", "text/css"),
         ("app.js", "javascript"),
         ("connect.html", "text/html"),
@@ -200,6 +201,6 @@ def test_packaged_web_files_match_desktop_web(tmp_path):
     ):
         packaged = root / "src/ttalkkak/ui/static" / name
         assert packaged.read_bytes() == (root / "desktop/web" / name).read_bytes()
-        r = c.get("/" + name)
+        r = c.get("/" if name == "index.html" else "/" + name)
         assert r.status_code == 200 and kind in r.headers["content-type"]
         assert r.content == packaged.read_bytes()
