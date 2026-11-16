@@ -198,6 +198,23 @@ def test_runner_merge_keeps_other_counts(tmp_path, store):
     assert cap["1"]["loadtest_id"] == "old" and cap["2"]["loadtest_id"] == tid
 
 
+def test_runner_corrupt_capacity_message_names_namespace(tmp_path, store):
+    class K(Kubectl):
+        def __call__(self, args, input=None):
+            super().__call__(args, input)
+            if args[0] == "get":
+                cm = {"data": {"capacity.json": "{bad"}}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(cm), stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    r = runner(tmp_path, store, good_run, K())
+    tid = r.start(10, replicas=2, autoscale_on=False)
+    assert (
+        "kubectl delete configmap ttalkkak-capacity -n ttalkkak"
+        in r.status(tid)["error"]
+    )
+
+
 def test_runner_read_error_does_not_overwrite_capacity(tmp_path, store):
     class K(Kubectl):
         def __call__(self, args, input=None):

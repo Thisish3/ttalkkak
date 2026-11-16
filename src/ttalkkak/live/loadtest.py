@@ -237,7 +237,7 @@ class LoadTestRunner:
             "apiVersion": "v1",
             "kind": "ConfigMap",
             "metadata": {"name": CAPACITY_CONFIGMAP, "namespace": self.namespace},
-            "data": {"capacity.json": merge_capacity(existing, cap)},
+            "data": {"capacity.json": merge_capacity(existing, cap, self.namespace)},
         }
         r = self.kubectl(["apply", "-f", "-"], input=json.dumps(manifest))
         if r.returncode != 0:

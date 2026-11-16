@@ -271,7 +271,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         record, records = None, {}
         cap = configmap("ttalkkak-capacity")
         try:
-            records = parse_capacity((cap or {}).get("capacity.json"))
+            records = parse_capacity((cap or {}).get("capacity.json"), deps.namespace)
             record = record_for(records, len(vllm_pods))
         except (TtalkkakError, ValueError):
             errors["capacity_record"] = "용량 기록을 읽지 못했습니다"

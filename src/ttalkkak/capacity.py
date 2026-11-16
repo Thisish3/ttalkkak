@@ -27,7 +27,9 @@ class CapacityRecord(BaseModel):
     max_tokens_per_min: float | None
 
 
-def parse_capacity(raw: str | None) -> dict[int, CapacityRecord]:
+def parse_capacity(
+    raw: str | None, namespace: str = "<네임스페이스>"
+) -> dict[int, CapacityRecord]:
     """Records by replica count from the ConfigMap value.
 
     New format: {"<replicas>": record, ...}. The old single record is read as
@@ -43,14 +45,17 @@ def parse_capacity(raw: str | None) -> dict[int, CapacityRecord]:
         return {int(n): CapacityRecord.model_validate(r) for n, r in data.items()}
     except (ValueError, ValidationError, TypeError, AttributeError) as err:
         raise TtalkkakError(
-            f"용량 기록을 읽을 수 없습니다 (ConfigMap ttalkkak-capacity): "
-            f"{type(err).__name__}. 부하 시험을 다시 실행하세요"
+            f"용량 기록(ConfigMap ttalkkak-capacity)을 읽을 수 없습니다 "
+            f"({type(err).__name__}). `kubectl delete configmap ttalkkak-capacity "
+            f"-n {namespace}`로 지운 뒤 부하 시험을 다시 실행하세요"
         ) from err
 
 
-def merge_capacity(raw: str | None, rec: CapacityRecord) -> str:
+def merge_capacity(
+    raw: str | None, rec: CapacityRecord, namespace: str = "<네임스페이스>"
+) -> str:
     """ConfigMap value with rec replacing only the entry for its replica count."""
-    records = {**parse_capacity(raw), rec.replicas: rec}
+    records = {**parse_capacity(raw, namespace), rec.replicas: rec}
     return json.dumps(
         {str(n): json.loads(r.model_dump_json()) for n, r in sorted(records.items())}
     )

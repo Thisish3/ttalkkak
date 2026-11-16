@@ -128,7 +128,7 @@ def _sample(
     tpm = prom.instant(q.TPM)
     waiting = int(sum(v for _, v in prom.instant(q.WAITING)))
     cap = k8s.get_configmap(ns, "ttalkkak-capacity").get("capacity.json")
-    record = record_for(parse_capacity(cap), desired)
+    record = record_for(parse_capacity(cap, ns), desired)
     pct = None
     if tpm and model and record is not None:
         pct = utilization(tpm[0][1], record, desired, model)["pct"]

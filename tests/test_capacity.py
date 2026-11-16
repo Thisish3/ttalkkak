@@ -237,5 +237,6 @@ def test_corrupt_capacity_raises_korean_error():
     from ttalkkak.errors import TtalkkakError
 
     for raw in ("{not json", '{"1": {"replicas": "x"}}'):
-        with pytest.raises(TtalkkakError, match="용량 기록을 읽을 수 없습니다"):
-            parse_capacity(raw)
+        with pytest.raises(TtalkkakError, match="읽을 수 없습니다") as e:
+            parse_capacity(raw, "ns1")
+        assert "kubectl delete configmap ttalkkak-capacity -n ns1" in str(e.value)

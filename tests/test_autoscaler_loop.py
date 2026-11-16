@@ -273,7 +273,10 @@ def test_corrupt_capacity_record_holds_in_korean():
     k8s = FakeK8s(raw="{not json")
     d, _ = tick(k8s, FakeProm(), State(), Rules(), T0, NS)
     assert d.action == "hold"
-    assert d.reason.startswith("오류: 용량 기록을 읽을 수 없습니다")
+    assert d.reason.startswith(
+        "오류: 용량 기록(ConfigMap ttalkkak-capacity)을 읽을 수 없습니다"
+    )
+    assert f"kubectl delete configmap ttalkkak-capacity -n {NS}" in d.reason
 
 
 def test_missing_record_reason_names_the_count():
