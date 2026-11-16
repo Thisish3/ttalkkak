@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "No HTTP plugin: the page reaches the saved server only through the api_request command.",
   "windows": ["main"],
-  "permissions": ["core:default", "window-state:default"]
+  "permissions": [
+    "core:default",
+    "window-state:default",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
+  ]
 }

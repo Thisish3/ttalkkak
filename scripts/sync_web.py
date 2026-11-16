@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "desktop" / "web"
 DST = ROOT / "src" / "ttalkkak" / "ui" / "static"
-SYNCED = ("index.html", "app.css", "app.js", "connect.html", "connect.js")
+SYNCED = ("index.html", "app.css", "app.js", "connect.html", "connect.js", "notify.js")
 
 
 def sync() -> None:

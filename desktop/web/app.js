@@ -817,6 +817,7 @@ async function liveTick() {
       fetched = true;
       live.last = snap;
       liveConn(true);
+      if (typeof notifier !== "undefined") notifier.observe(snap);
     } catch (e) {
       liveConn(false);
       if (!live.last) setHtml("live-msg", errorBox(e.message));
@@ -933,8 +934,26 @@ async function startLoadtest() {
   }
 }
 
+let notifier;
+
+async function sendOsNotification(title, body) {
+  const n = window.__TAURI__.notification;
+  if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") return;
+  n.sendNotification({ title, body });
+}
+
+function initNotifications() {
+  if (!inApp || typeof createNotifier !== "function") return;
+  const box = $("notif");
+  box.checked = notifyEnabled(localStorage);
+  $("notif-row").hidden = false;
+  box.onchange = () => setNotifyEnabled(localStorage, box.checked);
+  notifier = createNotifier({ send: sendOsNotification, now: Date.now, enabled: () => box.checked });
+}
+
 function initPanels() {
   ensureToastBox();
+  initNotifications();
   const today = new Date(), iso = (d) => d.toISOString().slice(0, 10);
   $("u-from").value = iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
   $("u-to").value = iso(new Date(today.getTime() + 86400000));

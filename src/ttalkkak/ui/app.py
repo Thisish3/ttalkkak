@@ -254,6 +254,7 @@ def create_app(
         Route("/app.js", asset("app.js", "text/javascript")),
         Route("/connect.html", asset("connect.html", "text/html")),
         Route("/connect.js", asset("connect.js", "text/javascript")),
+        Route("/notify.js", asset("notify.js", "text/javascript")),
         Route("/api/gpu", gpu),
         Route("/api/models", models),
         Route("/api/skills", skills),
