@@ -196,6 +196,7 @@ def test_packaged_web_files_match_desktop_web(tmp_path):
         ("app.css", "text/css"),
         ("app.js", "javascript"),
         ("connect.html", "text/html"),
+        ("connect.js", "javascript"),
     ):
         packaged = root / "src/ttalkkak/ui/static" / name
         assert packaged.read_bytes() == (root / "desktop/web" / name).read_bytes()

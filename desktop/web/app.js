@@ -20,9 +20,8 @@ async function loadConnection() {
   return inApp ? tauri.invoke("load_connection") : null;
 }
 
-async function pingServer(url, token) {
-  const info = await tauri.invoke("ping_server", { url, token });
-  return info;
+async function pingServer(url, token, allowCleartext) {
+  return tauri.invoke("ping_server", { url, token, allowCleartext });
 }
 
 const NAV = [
@@ -83,9 +82,11 @@ async function startShell() {
   document.getElementById("server").textContent = conn ? conn.url : location.host;
   try {
     const res = await api("/api/ping");
-    if (res.status === 401) throw new Error("401");
-    const info = await res.json();
-    renderChip(info);
+    if (!res.ok) {
+      setConn(res.status === 401 ? "bad" : "warn", `서버 응답 ${res.status}`);
+      return;
+    }
+    renderChip(await res.json());
     setConn("ok", "연결됨");
   } catch (e) {
     setConn("bad", "연결 끊김");

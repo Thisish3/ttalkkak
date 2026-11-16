@@ -3,7 +3,7 @@
 mod conn;
 mod http;
 
-use conn::{Connection, Keychain};
+use conn::{Connection, Keychain, Session};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -15,8 +15,13 @@ fn config_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 #[tauri::command]
-fn save_connection(app: AppHandle, url: String, token: String) -> Result<(), String> {
-    conn::save(&config_dir(&app)?, &Keychain, &url, &token)
+fn save_connection(
+    app: AppHandle,
+    session: tauri::State<Session>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    session.save(&config_dir(&app)?, &Keychain, &url, &token)
 }
 
 #[tauri::command]
@@ -25,28 +30,43 @@ fn load_connection(app: AppHandle) -> Option<Connection> {
 }
 
 #[tauri::command]
-fn forget_connection(app: AppHandle) -> Result<(), String> {
-    conn::forget(&config_dir(&app)?, &Keychain)
+fn forget_connection(app: AppHandle, session: tauri::State<Session>) -> Result<(), String> {
+    session.forget(&config_dir(&app)?, &Keychain)
 }
 
 /// Connection test for the entered (not yet saved) address.
 #[tauri::command]
-async fn ping_server(url: String, token: String) -> Result<serde_json::Value, String> {
+async fn ping_server(
+    url: String,
+    token: String,
+    allow_cleartext: bool,
+) -> Result<serde_json::Value, String> {
     let base = conn::normalize_url(&url)?;
+    if conn::cleartext_risk(&base) && !allow_cleartext {
+        return Err("암호화되지 않은 주소로 토큰을 보내려면 확인이 필요합니다".into());
+    }
     let res = http::send(&base, token.trim(), "GET", "/api/ping", None).await?;
     http::classify_ping(res.status, &res.body)
+}
+
+/// Whether the page must ask the operator before sending the token to this address.
+#[tauri::command]
+fn url_cleartext_risk(url: String) -> bool {
+    conn::cleartext_risk(&url)
 }
 
 /// Requests to the saved server only; the token never reaches the page.
 #[tauri::command]
 async fn api_request(
     app: AppHandle,
+    session: tauri::State<'_, Session>,
     path: String,
     method: String,
     body: Option<String>,
 ) -> Result<http::ApiResponse, String> {
     let dir = config_dir(&app)?;
-    let (base, token) = conn::load_with_token(&dir, &Keychain)
+    let (base, token) = session
+        .credentials(&dir, &Keychain)
         .ok_or_else(|| "저장된 서버 연결이 없습니다".to_string())?;
     http::send(&base, &token, &method.to_uppercase(), &path, body).await
 }
@@ -61,6 +81,20 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::about(app, Some("ttalkkak 콘솔 정보"), None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::quit(app, Some("종료"))?,
+        ],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "편집",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, Some("실행 취소"))?,
+            &PredefinedMenuItem::redo(app, Some("다시 실행"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, Some("잘라내기"))?,
+            &PredefinedMenuItem::copy(app, Some("복사"))?,
+            &PredefinedMenuItem::paste(app, Some("붙여넣기"))?,
+            &PredefinedMenuItem::select_all(app, Some("모두 선택"))?,
         ],
     )?;
     let conn_menu = Submenu::with_items(
@@ -82,7 +116,10 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ],
     )?;
     let help_menu = Submenu::with_items(app, "도움말", true, &[&item("docs", "문서 열기")?])?;
-    Menu::with_items(app, &[&app_menu, &conn_menu, &view_menu, &help_menu])
+    Menu::with_items(
+        app,
+        &[&app_menu, &edit_menu, &conn_menu, &view_menu, &help_menu],
+    )
 }
 
 fn on_menu(app: &AppHandle, id: &str) {
@@ -94,8 +131,11 @@ fn on_menu(app: &AppHandle, id: &str) {
             let _ = win.eval("location.replace('connect.html')");
         }
         "disconnect" => {
-            if let Err(e) = conn::forget(&config_dir(app).unwrap_or_default(), &Keychain) {
+            let result =
+                config_dir(app).and_then(|dir| app.state::<Session>().forget(&dir, &Keychain));
+            if let Err(e) = result {
                 eprintln!("연결 끊기 실패: {e}");
+                return;
             }
             let _ = win.eval("location.replace('connect.html')");
         }
@@ -111,6 +151,7 @@ fn on_menu(app: &AppHandle, id: &str) {
 
 fn main() {
     tauri::Builder::default()
+        .manage(Session::default())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .menu(build_menu)
@@ -120,6 +161,7 @@ fn main() {
             load_connection,
             forget_connection,
             ping_server,
+            url_cleartext_risk,
             api_request
         ])
         .run(tauri::generate_context!())

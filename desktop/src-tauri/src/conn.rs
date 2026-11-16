@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 pub const ACCOUNT: &str = "operator-token";
 const FILE: &str = "connection.json";
@@ -50,12 +51,22 @@ pub enum TokenStorage {
     File,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 struct Stored {
     url: String,
     token_storage: TokenStorage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     token: Option<String>,
+}
+
+impl std::fmt::Debug for Stored {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stored")
+            .field("url", &self.url)
+            .field("token_storage", &self.token_storage)
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// What the page may see: never the token itself.
@@ -81,20 +92,55 @@ fn path(dir: &Path) -> PathBuf {
     dir.join(FILE)
 }
 
+fn make_dir(dir: &Path) -> std::io::Result<()> {
+    let mut b = fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b.create(dir)
+}
+
+fn tmp_name(file: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static N: AtomicU32 = AtomicU32::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let name = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("connection.json");
+    file.with_file_name(format!(
+        ".{name}.{:x}{nanos:x}{n:x}.tmp",
+        std::process::id()
+    ))
+}
+
+/// Same-dir 0600 temp file (O_EXCL, O_NOFOLLOW), fsync, rename; temp removed on failure.
 fn write_private(file: &Path, data: &[u8]) -> Result<(), String> {
-    let tmp = file.with_extension("json.tmp");
     let err = |e: std::io::Error| format!("연결 정보를 저장하지 못했습니다: {e}");
+    let tmp = tmp_name(file);
     let mut opts = fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
+        opts.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
     let mut f = opts.open(&tmp).map_err(err)?;
-    f.write_all(data).map_err(err)?;
-    f.sync_all().map_err(err)?;
-    fs::rename(&tmp, file).map_err(err)
+    let done = f
+        .write_all(data)
+        .and_then(|()| f.sync_all())
+        .and_then(|()| fs::rename(&tmp, file));
+    if let Err(e) = done {
+        let _ = fs::remove_file(&tmp);
+        return Err(err(e));
+    }
+    Ok(())
 }
 
 pub fn save(dir: &Path, store: &dyn SecretStore, url: &str, token: &str) -> Result<(), String> {
@@ -103,7 +149,7 @@ pub fn save(dir: &Path, store: &dyn SecretStore, url: &str, token: &str) -> Resu
     if token.is_empty() {
         return Err("운영자 토큰이 비어 있습니다".into());
     }
-    fs::create_dir_all(dir).map_err(|e| format!("설정 폴더를 만들지 못했습니다: {e}"))?;
+    make_dir(dir).map_err(|e| format!("설정 폴더를 만들지 못했습니다: {e}"))?;
     let stored = match store.set(token) {
         Ok(()) => Stored {
             url,
@@ -145,16 +191,81 @@ pub fn load_with_token(dir: &Path, store: &dyn SecretStore) -> Option<(String, S
 }
 
 pub fn forget(dir: &Path, store: &dyn SecretStore) -> Result<(), String> {
-    let stored = read(dir);
+    let keychain_mode = read(dir).map_or(true, |s| s.token_storage == TokenStorage::Keychain);
     match fs::remove_file(path(dir)) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("연결 정보를 지우지 못했습니다: {e}")),
     }
-    if stored.map_or(true, |s| s.token_storage == TokenStorage::Keychain) {
-        store.delete()?;
+    match store.delete() {
+        Err(e) if keychain_mode => Err(e),
+        _ => Ok(()),
     }
-    Ok(())
+}
+
+/// Process-memory token cache so polling does not hit the keychain every time.
+#[derive(Default)]
+pub struct Session {
+    cache: Mutex<Option<(String, String)>>,
+}
+
+impl Session {
+    fn clear(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            *c = None;
+        }
+    }
+
+    pub fn save(
+        &self,
+        dir: &Path,
+        store: &dyn SecretStore,
+        url: &str,
+        token: &str,
+    ) -> Result<(), String> {
+        self.clear();
+        save(dir, store, url, token)
+    }
+
+    pub fn forget(&self, dir: &Path, store: &dyn SecretStore) -> Result<(), String> {
+        self.clear();
+        forget(dir, store)
+    }
+
+    pub fn credentials(&self, dir: &Path, store: &dyn SecretStore) -> Option<(String, String)> {
+        let mut c = self.cache.lock().ok()?;
+        if c.is_none() {
+            *c = load_with_token(dir, store);
+        }
+        c.clone()
+    }
+}
+
+/// True when an http:// address is outside loopback and the tailnet, so the token
+/// would cross the network unencrypted.
+pub fn cleartext_risk(raw: &str) -> bool {
+    use url::Host;
+    let Ok(u) = url::Url::parse(raw.trim()) else {
+        return false;
+    };
+    if u.scheme() != "http" {
+        return false;
+    }
+    match u.host() {
+        Some(Host::Ipv4(ip)) => {
+            let o = ip.octets();
+            !(ip.is_loopback() || (o[0] == 100 && (64..=127).contains(&o[1])))
+        }
+        Some(Host::Ipv6(ip)) => {
+            let s = ip.segments();
+            !(ip.is_loopback() || (s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0))
+        }
+        Some(Host::Domain(d)) => {
+            let d = d.to_ascii_lowercase();
+            !(d == "localhost" || d.ends_with(".ts.net"))
+        }
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -248,5 +359,135 @@ mod tests {
         assert!(save(d.path(), &k, "http://h:1/api", "t").is_err());
         assert!(save(d.path(), &k, "http://h:1", "  ").is_err());
         assert!(load(d.path()).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_does_not_follow_symlinked_tmp_and_keeps_0600() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let d = tempfile::tempdir().unwrap();
+        let victim = d.path().join("victim");
+        fs::write(&victim, "keep").unwrap();
+        symlink(&victim, d.path().join("connection.json.tmp")).unwrap();
+        symlink(&victim, d.path().join("connection.json")).unwrap();
+        let k = Fake {
+            broken: true,
+            ..Default::default()
+        };
+        save(d.path(), &k, "http://h:1", "tok").unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+        let meta = fs::symlink_metadata(d.path().join("connection.json")).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        let leftovers: Vec<_> = fs::read_dir(d.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n.ends_with(".tmp") && n != "connection.json.tmp")
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn created_config_dir_is_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let sub = d.path().join("cfg");
+        save(&sub, &Fake::default(), "http://h:1", "t").unwrap();
+        assert_eq!(
+            fs::metadata(&sub).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[test]
+    fn forget_clears_keychain_even_when_file_mode() {
+        let d = tempfile::tempdir().unwrap();
+        let k = Fake::default();
+        *k.secret.borrow_mut() = Some("stale".into());
+        let broken = Fake {
+            broken: true,
+            ..Default::default()
+        };
+        save(d.path(), &broken, "http://h:1", "t").unwrap();
+        forget(d.path(), &k).unwrap();
+        assert!(k.secret.borrow().is_none());
+        assert!(load(d.path()).is_none());
+    }
+
+    #[test]
+    fn debug_redacts_token() {
+        let s = Stored {
+            url: "http://h:1".into(),
+            token_storage: TokenStorage::File,
+            token: Some("ttk_op_secret".into()),
+        };
+        assert!(!format!("{s:?}").contains("ttk_op_secret"));
+    }
+
+    #[test]
+    fn normalize_url_rejects_query_and_fragment() {
+        assert!(normalize_url("http://h:1/?a=1").is_err());
+        assert!(normalize_url("http://h:1/#x").is_err());
+        assert!(normalize_url("not a url").is_err());
+        assert_eq!(
+            normalize_url(" https://h.example:9/ ").unwrap(),
+            "https://h.example:9"
+        );
+    }
+
+    #[test]
+    fn session_caches_token_until_save_or_forget() {
+        use std::cell::Cell;
+        struct Counting(Fake, Cell<u32>);
+        impl SecretStore for Counting {
+            fn set(&self, s: &str) -> Result<(), String> {
+                self.0.set(s)
+            }
+            fn get(&self) -> Result<Option<String>, String> {
+                self.1.set(self.1.get() + 1);
+                self.0.get()
+            }
+            fn delete(&self) -> Result<(), String> {
+                self.0.delete()
+            }
+        }
+        let d = tempfile::tempdir().unwrap();
+        let k = Counting(Fake::default(), Cell::new(0));
+        let s = Session::default();
+        s.save(d.path(), &k, "http://h:1", "one").unwrap();
+        assert_eq!(s.credentials(d.path(), &k).unwrap().1, "one");
+        assert_eq!(s.credentials(d.path(), &k).unwrap().1, "one");
+        assert_eq!(k.1.get(), 1);
+        s.save(d.path(), &k, "http://h:1", "two").unwrap();
+        assert_eq!(s.credentials(d.path(), &k).unwrap().1, "two");
+        s.forget(d.path(), &k).unwrap();
+        assert!(s.credentials(d.path(), &k).is_none());
+    }
+
+    #[test]
+    fn cleartext_risk_only_outside_loopback_and_tailnet() {
+        for ok in [
+            "https://example.com",
+            "http://127.0.0.1:8787",
+            "http://localhost:1",
+            "http://[::1]:1",
+            "http://100.64.0.1:8787",
+            "http://100.127.255.254",
+            "http://host.tail1234.ts.net:8787",
+            "http://[fd7a:115c:a1e0::1]:1",
+        ] {
+            assert!(!cleartext_risk(ok), "{ok}");
+        }
+        for risky in [
+            "http://192.168.1.5:8787",
+            "http://100.128.0.1",
+            "http://100.63.0.1",
+            "http://example.com",
+            "http://evil.ts.net.example.com",
+            "http://10.0.0.1",
+        ] {
+            assert!(cleartext_risk(risky), "{risky}");
+        }
     }
 }

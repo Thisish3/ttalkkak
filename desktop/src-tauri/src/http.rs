@@ -16,7 +16,10 @@ pub struct ApiResponse {
 
 /// Only `/api/...` paths on the saved server; nothing that could change host.
 pub fn check_path(path: &str) -> Result<(), String> {
-    let ok = path.starts_with("/api/")
+    let route = path.split('?').next().unwrap_or(path).to_ascii_lowercase();
+    let encoded = ["%2e", "%2f", "%5c"].iter().any(|e| route.contains(e));
+    let ok = !encoded
+        && path.starts_with("/api/")
         && !path.starts_with("/api//")
         && !path.contains(['\\', '@', '#'])
         && !path.contains("..")
@@ -25,6 +28,14 @@ pub fn check_path(path: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err("허용되지 않은 요청 경로입니다".into())
+    }
+}
+
+pub fn check_method(method: &str) -> Result<(), String> {
+    if matches!(method, "GET" | "POST") {
+        Ok(())
+    } else {
+        Err("허용되지 않은 요청 방식입니다".into())
     }
 }
 
@@ -57,10 +68,8 @@ pub async fn send(
     body: Option<String>,
 ) -> Result<ApiResponse, String> {
     check_path(path)?;
+    check_method(method)?;
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
-    if !matches!(method.as_str(), "GET" | "POST") {
-        return Err("허용되지 않은 요청 방식입니다".into());
-    }
     let mut req = client()?
         .request(method, format!("{base}{path}"))
         .bearer_auth(token);
@@ -107,5 +116,49 @@ mod tests {
         );
         assert_eq!(classify_ping(200, "<html>").unwrap_err(), NOT_TTALKKAK);
         assert_eq!(classify_ping(404, ok).unwrap_err(), NOT_TTALKKAK);
+    }
+
+    #[test]
+    fn encoded_dots_and_slashes_are_refused_but_query_encoding_is_fine() {
+        for bad in [
+            "/api/%2e%2e/x",
+            "/api/.%2E/x",
+            "/api/%2E./x",
+            "/api/a%2fb",
+            "/api/a%2Fb",
+            "/api/a%5cb",
+            "/api/a%5Cb",
+        ] {
+            assert!(check_path(bad).is_err(), "{bad}");
+        }
+        assert!(check_path("/api/runs?q=%ED%95%9C").is_ok());
+    }
+
+    #[test]
+    fn only_get_and_post_are_allowed() {
+        assert!(check_method("GET").is_ok() && check_method("POST").is_ok());
+        for m in ["DELETE", "PUT", "PATCH", "get", ""] {
+            assert!(check_method(m).is_err(), "{m}");
+        }
+    }
+
+    #[test]
+    fn connection_failure_maps_to_unreachable() {
+        let r = tauri::async_runtime::block_on(send(
+            "http://127.0.0.1:1",
+            "t",
+            "GET",
+            "/api/ping",
+            None,
+        ));
+        assert_eq!(r.err().as_deref(), Some(UNREACHABLE));
+        let r = tauri::async_runtime::block_on(send(
+            "http://127.0.0.1:1",
+            "t",
+            "DELETE",
+            "/api/ping",
+            None,
+        ));
+        assert_ne!(r.err().as_deref(), Some(UNREACHABLE));
     }
 }
