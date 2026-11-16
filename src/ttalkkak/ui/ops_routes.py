@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import re
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from ttalkkak.capacity import CapacityRecord
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
-from ttalkkak.live.loadtest import LoadTestRunner
+from ttalkkak.live.loadtest import LoadTestRunner, stages_for
 from ttalkkak.live.prom import PromError
 from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
 
@@ -259,7 +260,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         pods = (
             await run_in_threadpool(deps.cluster_status) if deps.cluster_status else []
         )
-        if not POD_NAME.match(pod) or pod not in {
+        if not POD_NAME.fullmatch(pod) or pod not in {
             p["name"] for p in pods if p["name"].startswith(f"{deployment}-")
         }:
             raise TtalkkakError("vLLM 파드가 아닙니다", 400)
@@ -267,24 +268,32 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         return JSONResponse({"ok": True})
 
     runner_box: list[LoadTestRunner] = []
+    runner_lock = threading.Lock()
 
     def loadtests(start: bool = False) -> LoadTestRunner:
         if start and not deps.gateway_url:
             raise TtalkkakError(
                 "게이트웨이 주소가 설정되지 않았습니다 (--gateway-url)", 503
             )
-        if not runner_box:
-            runner_box.append(
-                LoadTestRunner(
-                    root, deps.store, deps.gateway_url, "",
-                    kubectl=deps.kubectl, namespace=deps.namespace,
-                )
-            )  # fmt: skip
-        return runner_box[0]
+        with runner_lock:
+            if not runner_box:
+                runner_box.append(
+                    LoadTestRunner(
+                        root, deps.store, deps.gateway_url, "",
+                        kubectl=deps.kubectl, namespace=deps.namespace,
+                    )
+                )  # fmt: skip
+            return runner_box[0]
 
     def start_loadtest(b: dict) -> str:
         store()
         runner = loadtests(start=True)
+        users, on = b.get("max_users"), b.get("autoscale_on", False)
+        if not isinstance(users, int) or not isinstance(on, bool):
+            raise TtalkkakError("max_users는 정수, autoscale_on은 불리언입니다", 400)
+        stages_for(users)
+        if runner.busy:
+            raise TtalkkakError("이미 부하 시험이 실행 중입니다", 409)
         deployment, _ = autoscale_config()
         pods = deps.cluster_status() if deps.cluster_status else []
         replicas = sum(
@@ -299,11 +308,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             pass
         if not model or replicas < 1:
             raise TtalkkakError("실행 중인 vLLM 모델을 찾지 못했습니다", 503)
-        runner.model = model
-        users, on = b.get("max_users"), b.get("autoscale_on", False)
-        if not isinstance(users, int) or not isinstance(on, bool):
-            raise TtalkkakError("max_users는 정수, autoscale_on은 불리언입니다", 400)
-        return runner.start(users, replicas, on)
+        return runner.start(users, replicas, on, model)
 
     @guarded
     async def loadtest_start(request):

@@ -141,3 +141,37 @@ def test_loadtest_key_revoked_after_failure(tmp_path, store):
 
     runner(tmp_path, store, bad, Kubectl()).start(5, 1, True)
     assert store.active_keys() == []
+
+
+def test_list_survives_stray_stage_files_and_bad_records(tmp_path, store):
+    r = runner(tmp_path, store, good_run, Kubectl())
+    tid = r.start(5, 1, True)
+    d = tmp_path / "runs/loadtests"
+    (d / "a-1.guidellm.json").write_text("{}")
+    (d / "broken.json").write_text("not json")
+    (d / "20260101-000000.json").write_text("{}")
+    assert [x["id"] for x in r.list()] == [tid]
+
+
+def test_stage_outputs_are_removed_after_failed_stage(tmp_path, store):
+    def bad(cmd, **kw):
+        out_path(cmd).write_text("{}")
+        raise subprocess.CalledProcessError(1, cmd)
+
+    r = runner(tmp_path, store, bad, Kubectl())
+    r.start(5, 1, True)
+    assert not list((tmp_path / "runs/loadtests").rglob("*.guidellm.json"))
+    assert len(r.list()) == 1
+
+
+def test_status_rejects_bad_id(tmp_path, store):
+    r = runner(tmp_path, store, good_run, Kubectl())
+    with pytest.raises(TtalkkakError) as err:
+        r.status("../x")
+    assert err.value.exit_code == 404
+
+
+def test_default_clock_is_timezone_aware(tmp_path, store):
+    r = LoadTestRunner(tmp_path, store, "http://gw", "m", run=good_run, sync=True)
+    tid = r.start(1, 1, True)
+    assert datetime.fromisoformat(r.status(tid)["created_at"]).tzinfo is not None

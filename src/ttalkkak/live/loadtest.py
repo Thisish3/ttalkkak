@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ttalkkak.capacity import (
@@ -21,6 +22,7 @@ STAGES = [1, 5, 10, 20]
 STAGE_SECONDS = 15
 MAX_USERS = 100
 DATA = "kind=synthetic_text,prompt_tokens=256,output_tokens=128"
+TEST_ID = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?$")
 CAPACITY_CONFIGMAP = "ttalkkak-capacity"
 
 
@@ -41,7 +43,7 @@ class LoadTestRunner:
         gateway_url: str,
         model: str,
         run=subprocess.run,
-        now=datetime.now,
+        now=lambda: datetime.now(UTC),
         kubectl=None,
         namespace: str = "ttalkkak",
         ttft_target_ms: float = 1000,
@@ -60,7 +62,17 @@ class LoadTestRunner:
         self._lock = threading.Lock()
         self._active: str | None = None
 
-    def start(self, max_users: int, replicas: int, autoscale_on: bool) -> str:
+    @property
+    def busy(self) -> bool:
+        return self._active is not None
+
+    def start(
+        self,
+        max_users: int,
+        replicas: int,
+        autoscale_on: bool,
+        model: str | None = None,
+    ) -> str:
         stages = stages_for(max_users)
         with self._lock:
             if self._active is not None:
@@ -72,6 +84,8 @@ class LoadTestRunner:
                 n += 1
                 test_id = f"{base}-{n}"
             self._active = test_id
+            if model:
+                self.model = model
         record = {
             "id": test_id,
             "created_at": created.isoformat(),
@@ -90,13 +104,14 @@ class LoadTestRunner:
             else:
                 threading.Thread(target=self._work, args=args, daemon=True).start()
         except BaseException:
-            self._active = None
+            with self._lock:
+                self._active = None
             raise
         return test_id
 
     def status(self, test_id: str) -> dict:
         p = self.dir / f"{test_id}.json"
-        if not p.is_file():
+        if not TEST_ID.fullmatch(test_id) or not p.is_file():
             raise TtalkkakError("부하 시험 기록이 없습니다", 404)
         return {
             **json.loads(p.read_text(encoding="utf-8")),
@@ -106,7 +121,14 @@ class LoadTestRunner:
     def list(self) -> list[dict]:
         if not self.dir.is_dir():
             return []
-        out = [self.status(p.stem) for p in self.dir.glob("*.json")]
+        out = []
+        for p in self.dir.glob("*.json"):
+            try:
+                rec = self.status(p.stem)
+                rec["created_at"]
+            except (TtalkkakError, ValueError, KeyError, OSError):
+                continue
+            out.append(rec)
         return sorted(out, key=lambda r: r["created_at"], reverse=True)
 
     def _save(self, record: dict) -> None:
@@ -160,7 +182,15 @@ class LoadTestRunner:
         self.store.revoke_key(prefix)
 
     def _stage(self, users: int, key: str, test_id: str) -> dict:
-        out = self.dir / f"{test_id}-{users}.guidellm.json"
+        stage_dir = self.dir / "stages"
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        out = stage_dir / f"{test_id}-{users}.guidellm.json"
+        try:
+            return self._run_stage(users, key, out)
+        finally:
+            out.unlink(missing_ok=True)
+
+    def _run_stage(self, users: int, key: str, out: Path) -> dict:
         self.run(
             guidellm_cmd(
                 self.gateway_url, self.model, DATA, out, [users], STAGE_SECONDS, key
@@ -169,7 +199,6 @@ class LoadTestRunner:
             timeout=STAGE_SECONDS * 4 + 300,
         )
         report = json.loads(out.read_text(encoding="utf-8"))
-        out.unlink(missing_ok=True)
         (bench,) = report["benchmarks"]
         (point,) = parse_points({"benchmarks": [bench]})
         tpm, error_rate = parse_stage_load(bench)

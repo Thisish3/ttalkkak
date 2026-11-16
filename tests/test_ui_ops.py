@@ -140,3 +140,36 @@ def test_loadtest_routes_need_gateway(cc):
     assert post(c, "/api/loadtest", {"max_users": 5}).status_code == 503
     assert c.get("/api/loadtests").json() == []
     assert c.get("/api/loadtest/nope").status_code == 404
+
+
+def test_rejected_second_loadtest_keeps_running_model(tmp_path):
+    from ttalkkak.live import loadtest as lt
+
+    kc = Kc()
+    deps = UiDeps(
+        list_models=list, detect_gpu=lambda: None, run_fn=lambda *a: None,
+        store=TenantStore(tmp_path / "t.db"),
+        cluster_status=lambda: [
+            {"name": "vllm-qwen-abc", "ready": "1/1", "restarts": 0, "phase": "Running"}
+        ],
+        kubectl=kc, gateway_url="http://gw/v1",
+        prometheus=type("P", (), {"instant": lambda s, q: [({"model_name": "new"}, 1)]})(),
+    )  # fmt: skip
+    c = TestClient(create_app(tmp_path, deps, frozenset({"testserver"})))
+    runner = None
+    orig = lt.LoadTestRunner.__init__
+
+    def spy(self, *a, **k):
+        nonlocal runner
+        orig(self, *a, **k)
+        runner = self
+        self._active = "busy"
+        self.model = "old"
+
+    lt.LoadTestRunner.__init__ = spy
+    try:
+        r = post(c, "/api/loadtest", {"max_users": 5, "autoscale_on": True})
+    finally:
+        lt.LoadTestRunner.__init__ = orig
+    assert r.status_code == 409 and runner.model == "old"
+    assert post(c, "/api/loadtest", {"max_users": "x"}).status_code == 400
