@@ -2,6 +2,8 @@
 const tauri = window.__TAURI__ && window.__TAURI__.core;
 const inApp = Boolean(tauri);
 
+const API_TIMEOUT_MS = 8000;
+
 async function api(path, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
   if (inApp) {
@@ -13,7 +15,13 @@ async function api(path, opts = {}) {
   if (opts.body !== undefined && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  return fetch(path, { ...opts, method, headers });
+  const ctl = typeof AbortController === "undefined" ? null : new AbortController();
+  const timer = ctl && setTimeout(() => ctl.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(path, { ...opts, method, headers, signal: ctl ? ctl.signal : undefined });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function loadConnection() {
@@ -568,7 +576,29 @@ async function downloadCsv() {
 
 // ---- live screen ----
 const LIVE_MS = 2000;
-const live = { on: false, timer: null, busy: false, lost: false, last: null, max: 0, enabled: null };
+const live = {
+  on: false, timer: null, busy: false, lost: false, last: null, max: 0, enabled: null,
+  now: () => Date.now(), ltAt: -Infinity, ltRunning: false, ltFailed: false, shown: null,
+};
+const LT_MS = 15000;
+const rendered = new WeakMap();
+
+function setHtml(id, html) {
+  const el = $(id);
+  if (rendered.get(el) === html) return;
+  rendered.set(el, html);
+  el.innerHTML = html;
+}
+
+function card(id, fn, cols) {
+  try {
+    setHtml(id, fn());
+  } catch (e) {
+    console.error(e);
+    const box = errorBox("화면을 그리지 못했습니다: " + e.message);
+    setHtml(id, cols ? rowMessage(cols, box) : box);
+  }
+}
 
 const num = (n, d = 0) =>
   typeof n === "number" && isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "-";
@@ -622,17 +652,19 @@ function liveHeadline(s) {
 
 function liveGauge(c, errors) {
   if (errors.capacity || errors.capacity_record) return errsFor(errors, ["capacity", "capacity_record"]);
-  const missing = c.missing_text ? `<div class="cap">▲ ${esc(c.missing_text)}</div>` : "";
-  if (c.state !== "ok") {
+  if (c.state === "needs_loadtest") {
     return `<div class="lab">용량 사용률</div>
       <p><b>▲ 부하 시험을 먼저 돌리세요</b></p>
       <div class="cap">${esc(c.missing_text || "지금 복제본 수와 모델에 맞는 용량 기록이 없습니다")}</div>
       <p><button class="btn primary" data-act="goto-loadtest">부하 시험으로 이동</button></p>`;
   }
+  if (c.state !== "ok") return errorBox(`용량 상태를 알 수 없습니다: ${c.state}`);
+  const missing = c.missing_text ? `<div class="cap">▲ ${esc(c.missing_text)}</div>` : "";
   const src = c.source || {};
+  const target = typeof src.ttft_target_ms === "number" ? `, 첫 글자 p99 ≤ ${num(src.ttft_target_ms / 1000, src.ttft_target_ms % 1000 ? 1 : 0)}초` : "";
   return `<div class="row">${gaugeSvg(c.pct)}<div><div class="lab">용량 사용률</div>
     <div class="cap">지금 <b>${num(c.now_tpm)}</b> 토큰/분<br>÷ 최대 <b>${num(c.max_tpm)}</b> 토큰/분<br>
-    최대 = 부하 시험(${esc(src.loadtest_id)}, 복제본 ${esc(src.replicas)}개)<br>100 %에 가까우면 거절(429)이 늘어납니다</div>${missing}</div></div>`;
+    최대 = 부하 시험(${dateTimeText(src.created_at)}, 복제본 ${esc(src.replicas)}개${esc(target)})<br>100 %에 가까우면 거절(429)이 늘어납니다</div>${missing}</div></div>`;
 }
 
 function livePeriod(c, errors) {
@@ -693,39 +725,37 @@ function liveDecisions(s) {
 }
 
 function liveAuto(s) {
-  const en = (s.autoscale || {}).enabled, max = ((s.capacity || {}).signals || {}).max_replicas;
-  const sw = en == null
+  const en = (s.autoscale || {}).enabled;
+  return en == null
     ? `<button class="btn switch" role="switch" aria-checked="false" disabled>자동 증감 – 설정을 읽지 못했습니다</button>`
     : `<button class="btn switch" role="switch" data-act="toggle-auto" aria-checked="${en}">${en ? "● 자동 증감 켜짐" : "– 자동 증감 꺼짐"}</button>`;
-  const opts = Array.from({ length: max || 0 }, (_, i) => `<option value="${i + 1}">${i + 1}개</option>`).join("");
-  const manual = max ? `<span class="mut">수동 조정</span><select id="live-count" aria-label="복제본 수">${opts}</select><button class="btn secondary" data-act="scale">적용</button>` : "";
-  return sw + manual;
 }
 
 function renderLive(s) {
   const errors = s.errors || {}, c = s.capacity || {};
   live.max = (c.signals || {}).max_replicas || 0;
   live.enabled = (s.autoscale || {}).enabled;
-  $("live-head").innerHTML = liveHeadline(s);
-  $("live-head-err").innerHTML = errsFor(errors, ["headline", "power_w"]);
-  $("live-gauge").innerHTML = liveGauge(c, errors);
-  $("live-period").innerHTML = livePeriod(c, errors);
-  $("live-signals").innerHTML = liveSignals(c, errors);
-  $("live-tenants").innerHTML = liveTenants(s);
-  $("live-tenants-err").innerHTML = errsFor(errors, ["tenants"]);
-  $("live-replicas").innerHTML = liveReplicas(s);
-  $("live-replicas-err").innerHTML = errsFor(errors, ["replicas"]);
-  $("live-recs").innerHTML = liveRecs(s);
-  $("live-auto").innerHTML = liveAuto(s);
-  $("live-auto-err").innerHTML = errsFor(errors, ["autoscale"]);
-  $("live-decisions").innerHTML = liveDecisions(s);
+  card("live-head", () => liveHeadline(s));
+  card("live-head-err", () => errsFor(errors, ["headline", "power_w"]));
+  card("live-gauge", () => liveGauge(c, errors));
+  card("live-period", () => livePeriod(c, errors));
+  card("live-signals", () => liveSignals(c, errors));
+  card("live-tenants", () => liveTenants(s), 4);
+  card("live-tenants-err", () => errsFor(errors, ["tenants"]));
+  card("live-replicas", () => liveReplicas(s), 7);
+  card("live-replicas-err", () => errsFor(errors, ["replicas"]));
+  card("live-recs", () => liveRecs(s));
+  card("live-auto", () => liveAuto(s));
+  card("live-auto-err", () => errsFor(errors, ["autoscale"]));
+  card("live-decisions", () => liveDecisions(s), 4);
 }
 
 const LT_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"];
 const LT_DASH = ["", "6 3", "2 3", "8 3 2 3"];
 
 function loadtestChart(runs) {
-  const shown = runs.filter((r) => (r.stages || []).length).slice(0, 4);
+  const ok = (x) => Number.isFinite(x.users) && Number.isFinite(x.ttft_p99_ms);
+  const shown = runs.map((r) => ({ ...r, stages: (r.stages || []).filter(ok) })).filter((r) => r.stages.length).slice(0, 4);
   if (!shown.length) return "";
   const W = 360, H = 170, L = 38, B = 22, T = 8, R = 8;
   const users = Math.max(...shown.flatMap((r) => r.stages.map((x) => x.users)));
@@ -733,7 +763,8 @@ function loadtestChart(runs) {
   const X = (u) => L + (u / users) * (W - L - R), Y = (v) => H - B - (v / top) * (H - B - T);
   const lines = shown.map((r, i) => {
     const pts = r.stages.map((x) => `${X(x.users).toFixed(1)},${Y(x.ttft_p99_ms).toFixed(1)}`).join(" ");
-    return `<polyline class="ln" style="stroke:${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}" points="${pts}"/>`;
+    const dots = r.stages.map((x) => `<circle cx="${X(x.users).toFixed(1)}" cy="${Y(x.ttft_p99_ms).toFixed(1)}" r="3" fill="${LT_COLORS[i]}"/>`).join("");
+    return `<polyline class="ln" style="stroke:${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}" points="${pts}"/>${dots}`;
   }).join("");
   const legend = shown.map((r, i) =>
     `<span><svg viewBox="0 0 28 8" aria-hidden="true"><path d="M0 4h28" stroke="${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}"/></svg>${esc(r.id)} · 복제본 ${esc(r.replicas)}개${r.autoscale_on ? " · 자동 증감 켬" : ""}</span>`).join("");
@@ -747,6 +778,7 @@ function loadtestChart(runs) {
 
 function renderLoadtests(runs) {
   const running = runs.find((r) => r.running);
+  live.ltRunning = Boolean(running);
   $("lt-progress").innerHTML = running
     ? `<div class="infobox">▲ 진행 중: ${esc(running.id)} · 복제본 ${esc(running.replicas)}개 · 끝낸 단계 ${(running.stages || []).map((x) => `${esc(x.users)}명`).join(", ") || "없음"}</div>`
     : "";
@@ -760,9 +792,16 @@ function renderLoadtests(runs) {
   }).join("") || emptyState("아직 부하 시험 기록이 없습니다");
 }
 
+function liveStatus() {
+  const state = live.lost ? "bad" : live.ltFailed ? "warn" : "ok";
+  if (live.shown === state) return;
+  live.shown = state;
+  setConn(state, { bad: "연결 끊김", warn: "부하 시험 기록을 읽지 못함", ok: "연결됨" }[state]);
+}
+
 function liveConn(ok) {
   live.lost = !ok;
-  setConn(ok ? "ok" : "bad", ok ? "연결됨" : "연결 끊김");
+  liveStatus();
   const stale = $("live-stale");
   stale.hidden = ok;
   stale.textContent = ok ? "" : "✕ 연결 끊김 · 마지막 값을 보여 줍니다";
@@ -772,21 +811,40 @@ async function liveTick() {
   if (live.busy) return;
   live.busy = true;
   try {
-    const snap = await call("/api/live");
-    live.last = snap;
-    $("live-msg").innerHTML = "";
-    renderLive(snap);
-    liveConn(true);
-  } catch (e) {
-    liveConn(false);
-    if (!live.last) $("live-msg").innerHTML = errorBox(e.message);
+    let snap = null, fetched = false;
+    try {
+      snap = await call("/api/live");
+      fetched = true;
+      live.last = snap;
+      liveConn(true);
+    } catch (e) {
+      liveConn(false);
+      if (!live.last) setHtml("live-msg", errorBox(e.message));
+    }
+    if (fetched) {
+      try {
+        setHtml("live-msg", "");
+        renderLive(snap);
+      } catch (e) {
+        console.error(e);
+        setHtml("live-msg", errorBox("화면을 그리지 못했습니다: " + e.message));
+      }
+    }
+    if (live.ltRunning || live.now() - live.ltAt >= LT_MS) {
+      try {
+        const runs = await call("/api/loadtests");
+        live.ltAt = live.now();
+        live.ltFailed = false;
+        renderLoadtests(runs);
+      } catch (e) {
+        live.ltFailed = true;
+        console.error(e);
+      }
+      liveStatus();
+    }
+  } finally {
+    live.busy = false;
   }
-  try {
-    renderLoadtests(await call("/api/loadtests"));
-  } catch (e) {
-    $("lt-list").innerHTML = errorBox(e.message);
-  }
-  live.busy = false;
 }
 
 function liveSchedule() {
@@ -809,6 +867,12 @@ function liveStop() {
   live.on = false;
   clearTimeout(live.timer);
   live.timer = null;
+}
+
+function onVisibility() {
+  if (!live.on) return;
+  if (document.hidden) liveSchedule();
+  else return liveStart();
 }
 
 async function liveAct(e) {
@@ -841,13 +905,6 @@ async function liveAct(e) {
           ? `켜면 사용률에 따라 복제본 수를 1~${live.max}개 사이에서 자동으로 늘리고 줄입니다.`
           : "끄면 지금 복제본 수를 그대로 유지하고, 늘리거나 줄이는 일은 수동으로만 합니다.",
         confirmText: on ? "켜기" : "끄기",
-      });
-    } else if (act === "scale") {
-      const n = Number($("live-count").value);
-      r = await mutate("/api/replicas", { count: n }, {
-        title: "복제본 수 조정",
-        message: `vLLM 복제본을 ${n}개로 맞춥니다 (허용 범위 1~${live.max}개). GPU를 ${n}장분 점유하고, 새 복제본은 모델을 불러올 때까지 요청을 받지 못합니다.`,
-        confirmText: "적용",
       });
     }
     if (r !== CANCELLED) {
@@ -893,11 +950,7 @@ function initPanels() {
   $("u-csv").onclick = downloadCsv;
   $("panel-live").addEventListener("click", liveAct);
   $("lt-start").onclick = startLoadtest;
-  document.addEventListener("visibilitychange", () => {
-    if (!live.on) return;
-    if (document.hidden) liveSchedule();
-    else liveStart();
-  });
+  document.addEventListener("visibilitychange", onVisibility);
   onShow.live = liveStart;
   onShow.overview = loadOverview;
   onShow.cost = loadRunChoices;

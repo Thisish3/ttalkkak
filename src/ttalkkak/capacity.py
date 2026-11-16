@@ -116,6 +116,7 @@ def utilization(
             "created_at": rec.created_at.isoformat(),
             "replicas": rec.replicas,
             "model": rec.model,
+            "ttft_target_ms": rec.ttft_target_ms,
         },
     }
 

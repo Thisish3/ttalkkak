@@ -64,6 +64,7 @@ def test_utilization_pct():
     assert u["pct"] == pytest.approx(42.79, abs=0.01)
     assert u["max_tpm"] == 21500
     assert u["source"]["loadtest_id"] == "20261113-100000"
+    assert u["source"]["ttft_target_ms"] == rec().ttft_target_ms
 
 
 @pytest.mark.parametrize(

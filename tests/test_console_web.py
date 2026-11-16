@@ -139,3 +139,9 @@ def test_live_screen_polls_the_api_without_websocket_and_confirms_mutations():
     assert "document.hidden" in js and "visibilitychange" in js
     for path in ("/api/live", "/api/loadtests", "/api/loadtest", "/api/autoscale"):
         assert f'"{path}"' in js
+
+
+def test_live_screen_has_no_manual_replica_control():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'mutate("/api/replicas"' not in js and "live-count" not in js + html

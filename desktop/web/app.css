@@ -219,7 +219,6 @@ pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line
 .chart { width: 100%; height: auto; display: block; }
 .chart text { fill: var(--mut); font-size: 10px; font-family: var(--font); }
 .chart .axis { stroke: var(--line-strong); stroke-width: 1; }
-.chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .edge { stroke: var(--bad); stroke-width: 1; stroke-dasharray: 4 3; }
 .chart text.edge-t { fill: var(--bad); }
 .chart .ln { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
@@ -240,6 +239,4 @@ pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line
 .legend { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-2) 0; font-size: var(--fs-s); color: var(--mut); }
 .legend svg { width: 28px; height: 8px; vertical-align: middle; margin-right: 4px; }
 .legend path { fill: none; stroke-width: 2; }
-.recs { display: flex; flex-direction: column; gap: var(--sp-2); }
-.recs .row { justify-content: space-between; flex-wrap: nowrap; }
 .switch[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }

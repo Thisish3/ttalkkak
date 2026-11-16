@@ -30,6 +30,8 @@ const ctx = {
     body: el("body"), addEventListener() {}, removeEventListener() {},
   },
   Response,
+  AbortController,
+  fetch: (...a) => ctx.FETCH(...a),
 };
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
@@ -156,5 +158,150 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   if (els["live-head"].innerHTML !== kept) fail("last values were not kept");
   run("liveConn(true)");
   if (!els["conn"].textContent.includes("연결됨")) fail("status bar not restored");
+
+  // ---- fix round 1 ----
+  // I1/I2: no manual replica control; controls survive a poll with unchanged data
+  render(base());
+  hasNot("live-auto", "live-count"); hasNot("live-auto", "수동 조정");
+  els["live-auto"].innerHTML = "MARK";
+  render(base());
+  if (els["live-auto"].innerHTML !== "MARK") fail("unchanged autoscale controls were rebuilt on a poll");
+  const off = base(); off.autoscale.enabled = false;
+  render(off);
+  has("live-auto", "꺼짐");
+
+  // M1: a render exception is a card error, never 연결 끊김; busy is released
+  const errors = [];
+  const origErr = console.error;
+  console.error = (...a) => errors.push(a);
+  let mode = "ok", calls = [], clock = 1000;
+  put("API", async (p, o) => {
+    calls.push(p + (o && o.method ? " " + o.method : ""));
+    if (mode === "fail" && p === "/api/live") throw new Error("down");
+    if (mode === "ltfail" && p === "/api/loadtests") throw new Error("lt down");
+    if (mode === "null" && p === "/api/live") return new Response("null", { status: 200 });
+    const body = p === "/api/live" ? (mode === "badshape" ? { ...base(), tenants: 5 } : base()) : [];
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  const realApi = run("api");
+  run("api = API");
+  const spy = [];
+  put("SPY", (state, text) => spy.push([state, text]));
+  run("setConn = SPY");
+  put("NOWV", clock);
+  run("live.now = () => NOWV");
+  const tick = async (m, t) => { mode = m; calls = []; ctx.NOWV = t; await run("liveTick()"); };
+  const conn = () => spy[spy.length - 1];
+
+  reset(); spy.length = 0; run("live.last = null; live.shown = null; live.ltAt = -Infinity; live.busy = false");
+  await tick("badshape", 1000);
+  has("live-tenants", "errbox"); has("live-head", "412");
+  if (conn()[0] !== "ok") fail("render error was reported as a lost connection: " + JSON.stringify(spy));
+  if (!errors.length) fail("render error was not logged");
+  await tick("null", 3000);
+  has("live-msg", "errbox");
+  if (conn()[0] !== "ok" || run("live.busy")) fail("render failure leaked busy/connection state");
+
+  // M5/M8: success, failure keeps last values, overlap guard
+  reset(); spy.length = 0; run("live.last = null; live.shown = null; live.ltAt = -Infinity; live.ltRunning = false");
+  await tick("ok", 1000);
+  await tick("ok", 3000);
+  if (spy.filter((x) => x[0] === "ok").length !== 1) fail("status bar rewritten on every tick: " + JSON.stringify(spy));
+  const keptHtml = els["live-head"].innerHTML;
+  await tick("fail", 5000);
+  if (conn()[0] !== "bad" || !conn()[1].includes("연결 끊김")) fail("failed poll did not mark 연결 끊김");
+  if (els["live-head"].innerHTML !== keptHtml) fail("failed poll cleared the last values");
+  await tick("ok", 7000);
+  if (conn()[0] !== "ok") fail("recovery not shown");
+  calls = []; mode = "ok";
+  await Promise.all([run("liveTick()"), run("liveTick()")]);
+  if (calls.filter((c) => c === "/api/live").length !== 1) fail("overlapping ticks both fetched: " + calls);
+
+  // M2: loadtests are polled at most every 15 s unless a run is active
+  reset(); run("live.ltAt = -Infinity; live.ltRunning = false");
+  await tick("ok", 1000);
+  if (!calls.includes("/api/loadtests")) fail("first tick must load the test list");
+  await tick("ok", 3000);
+  if (calls.includes("/api/loadtests")) fail("loadtests polled within 15 s");
+  await tick("ok", 17000);
+  if (!calls.includes("/api/loadtests")) fail("loadtests not refreshed after 15 s");
+  run("live.ltRunning = true");
+  await tick("ok", 18000);
+  if (!calls.includes("/api/loadtests")) fail("an active run must be polled every tick");
+  run("live.ltRunning = false");
+  put("RUNS2", runs);
+  run("renderLoadtests(RUNS2)");
+  const listKept = els["lt-list"].innerHTML;
+  await tick("ltfail", 40000);
+  if (els["lt-list"].innerHTML !== listKept) fail("failed list fetch replaced the last list");
+  if (conn()[0] !== "warn" || !conn()[1].includes("부하 시험")) fail("list failure not shown in the status bar: " + JSON.stringify(conn()));
+  await tick("ok", 60000);
+  if (conn()[0] !== "ok") fail("status not restored after the list recovered");
+
+  // M5: visibility pause/resume
+  timers.length = 0;
+  run("live.on = true");
+  ctx.document.hidden = true;
+  run("onVisibility()");
+  if (timers.length) fail("hidden window scheduled a poll");
+  ctx.document.hidden = false;
+  mode = "ok";
+  await run("onVisibility()");
+  if (timers.length !== 1) fail("visible window did not resume polling");
+  run("liveStop()");
+
+  // M5: mutations go through the confirm modal
+  const act = (name, extra = {}) => ({ target: { closest: () => ({ dataset: { act: name, ...extra } }) } });
+  let asked = [];
+  put("CONFIRM", async (o) => (asked.push(o), false));
+  run("confirmDialog = CONFIRM");
+  calls = [];
+  await run("liveAct")(act("toggle-auto"));
+  await run("liveAct")(act("kill", { pod: "vllm-abc" }));
+  if (calls.some((c) => c.includes("POST"))) fail("cancelled confirm still posted: " + calls);
+  if (asked.length !== 2 || !asked.every((a) => a.title && a.message)) fail("confirm lacks title/message");
+  if (!asked[1].message.includes("vllm-abc")) fail("kill confirm does not name the pod");
+  put("CONFIRM", async (o) => (asked.push(o), true));
+  run("confirmDialog = CONFIRM");
+  calls = [];
+  await run("liveAct")(act("kill", { pod: "vllm-abc" }));
+  if (!calls.includes("/api/replicas/vllm-abc/delete POST")) fail("kill did not post: " + calls);
+  calls = [];
+  run("live.enabled = true");
+  await run("liveAct")(act("toggle-auto"));
+  if (!calls.includes("/api/autoscale POST")) fail("toggle did not post: " + calls);
+  await run("liveAct")(act("scale"));
+  if (calls.some((c) => c.startsWith("/api/replicas POST"))) fail("manual scale is still wired");
+  console.error = origErr;
+
+  // M3: chart skips bad points and marks a one-stage run
+  const bad = [
+    { id: "a", created_at: "2026-11-14T03:10:00+00:00", replicas: 1, autoscale_on: false, capacity_tpm: 1, error: null, running: false,
+      stages: [{ users: 1, ttft_p99_ms: 100 }, { users: 5 }, { users: 10, ttft_p99_ms: NaN }, { users: 20, ttft_p99_ms: 400 }] },
+    { id: "b", created_at: "2026-11-14T03:10:00+00:00", replicas: 1, autoscale_on: false, capacity_tpm: 1, error: null, running: false,
+      stages: [{ users: 1, ttft_p99_ms: 100 }] },
+  ];
+  put("BAD", bad);
+  run("renderLoadtests(BAD)");
+  hasNot("lt-chart", "NaN"); hasNot("lt-chart", "undefined"); has("lt-chart", "<circle");
+
+  // M7: only needs_loadtest shows the load-test prompt; gauge caption has basis + date
+  const odd = base(); odd.capacity.state = "weird";
+  render(odd);
+  hasNot("live-gauge", "부하 시험을 먼저"); has("live-gauge", "weird");
+  const cap = base(); cap.capacity.source.ttft_target_ms = 1000;
+  render(cap);
+  has("live-gauge", "p99 ≤ 1초"); has("live-gauge", "2026");
+
+  put("REALAPI", realApi);
+  run("api = REALAPI");
+  // M4: browser fetch is aborted after 8 s
+  timers.length = 0;
+  put("FETCH", (p, o) => new Promise((_, rej) => o.signal.addEventListener("abort", () => rej(new Error("aborted")))));
+  const pending = run("api('/api/live')").then(() => "resolved", (e) => e.message);
+  const t8 = timers.find((t) => t.ms === 8000);
+  if (!t8) fail("no 8 s timeout armed");
+  t8.fn();
+  if ((await pending) !== "aborted") fail("hung request was not aborted");
   console.log("OK");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -418,3 +418,23 @@ def test_snapshot_capacity_carries_the_hour_series_for_the_chart():
 def test_snapshot_series_is_empty_when_capacity_unknown():
     s = snap(down_prom(), [log("acme", 100)], {"acme": 1000})
     assert s["capacity"]["series"] == []
+
+
+def test_snapshot_series_takes_the_first_series_sorted_when_prom_returns_several():
+    inner = prom_with(good_answers())
+
+    class Two:
+        def instant(self, q):
+            return inner.instant(q)
+
+        def range(self, q, minutes, step_s):
+            rows = inner.range(q, minutes, step_s)
+            if q == P.TPM:
+                (_labels, s), *_ = rows
+                later = [(t + timedelta(seconds=30), v * 2) for t, v in s]
+                return [({"a": "1"}, later[::-1] + s), ({"a": "2"}, s)]
+            return rows
+
+    s = build_snapshot(Two(), PODS, [], {}, REC, CHIP, "m", NOW, AUTO)
+    ts = [t for t, _ in s["capacity"]["series"]]
+    assert ts == sorted(ts) and len(ts) == len(set(ts))

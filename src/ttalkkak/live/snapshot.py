@@ -97,7 +97,7 @@ def _capacity(prom, rec, replicas, model, errors):
         cap = utilization(now_rows[0][1], rec, replicas, model)
         series = []
         if cap["max_tpm"]:
-            for _, s in prom.range(q.TPM, 60, 30):
+            for _, s in prom.range(q.TPM, 60, 30)[:1]:
                 series += [(t, v / cap["max_tpm"] * 100) for t, v in s]
         cap["period"] = period_summary(series)
         cap["series"] = [[t.timestamp(), v] for t, v in sorted(series)]
