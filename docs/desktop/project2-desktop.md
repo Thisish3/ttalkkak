@@ -170,7 +170,6 @@ kubectl rollout status deployment/$DEP -n ttalkkak
 
 각 항목의 통과/실패와 실패 시 증상은 `docs/results/project2/app-gui-check.md`에 적는다. 앱 버그가 나오면 증상만 적고 고치지 않는다(맥 세션이 고친다).
 
-참고: 연결 화면 하단의 "토큰은 서버에서 `ttalkkak console-token`으로 확인합니다"는 실제 명령과 다르다. 실제 명령은 `ttalkkak ops token show`이다(앱 문구 수정은 맥 세션의 일).
 
 ## 11. 결과 정리와 기준 표
 
