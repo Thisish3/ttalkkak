@@ -225,6 +225,10 @@ def _dex(opt: GatewayOptions) -> list[dict]:
     ]
 
 
+HF_CACHE_HOST_PATH = "/var/lib/ttalkkak/hf-cache"
+HF_CACHE_MOUNT = "/root/.cache/huggingface"
+
+
 def _vllm(run_dir: Path, opt: GatewayOptions) -> tuple[list[dict], str, dict]:
     b = load_run(run_dir)
     if opt.chip:
@@ -258,6 +262,17 @@ def _vllm(run_dir: Path, opt: GatewayOptions) -> tuple[list[dict], str, dict]:
         tmpl["spec"]["runtimeClassName"] = "nvidia"
     if v.VLLM_CACHED_USAGE_FLAG not in container["args"]:
         container["args"].append(v.VLLM_CACHED_USAGE_FLAG)
+    # 복제본이 노드의 같은 디렉터리를 모델 캐시로 쓴다: 모델을 한 번만 받고,
+    # 새 복제본의 준비 시간이 다운로드에 묶이지 않게 한다.
+    container.setdefault("volumeMounts", []).append(
+        {"name": "hf-cache", "mountPath": HF_CACHE_MOUNT}
+    )
+    tmpl["spec"].setdefault("volumes", []).append(
+        {
+            "name": "hf-cache",
+            "hostPath": {"path": HF_CACHE_HOST_PATH, "type": "DirectoryOrCreate"},
+        }
+    )
     labels = {"app.kubernetes.io/name": dep["metadata"]["name"]}
     return [dep, svc], resource_name(b), {"labels": labels, "port": port}
 

@@ -321,3 +321,19 @@ def test_ops_serve_runs_exactly_one_replica(store):
     (dep,) = kind(d, "25-ops-serve.yaml", "Deployment")
     assert dep["spec"]["replicas"] == 1
     assert dep["spec"]["strategy"] == {"type": "Recreate"}
+
+
+def test_vllm_replicas_share_a_host_model_cache(store):
+    _, d = docs(store, replicas=2, max_replicas=2)
+    (dep,) = kind(d, "20-vllm.yaml", "Deployment")
+    spec = dep["spec"]["template"]["spec"]
+    (mount,) = [
+        m for m in spec["containers"][0]["volumeMounts"] if m["name"] == "hf-cache"
+    ]
+    assert mount["mountPath"] == "/root/.cache/huggingface"
+    (vol,) = [x for x in spec["volumes"] if x["name"] == "hf-cache"]
+    assert vol["hostPath"] == {
+        "path": "/var/lib/ttalkkak/hf-cache",
+        "type": "DirectoryOrCreate",
+    }
+    assert any(x["name"] == "shm" for x in spec["volumes"])
