@@ -77,7 +77,11 @@ def status(ns: str, kubectl=run_kubectl) -> list[dict]:
                 "name": p["metadata"]["name"],
                 "ready": f"{sum(c.get('ready', False) for c in cs)}/{len(cs)}",
                 "restarts": sum(c.get("restartCount", 0) for c in cs),
-                "phase": p.get("status", {}).get("phase", "?"),
+                # 지워지는 파드도 phase는 Running이다. kubectl처럼 Terminating으로
+                # 보고해야 부하 시험과 실시간 탭이 복제본으로 세지 않는다.
+                "phase": "Terminating"
+                if p["metadata"].get("deletionTimestamp")
+                else p.get("status", {}).get("phase", "?"),
             }
         )
     return rows

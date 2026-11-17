@@ -82,6 +82,18 @@ def test_status_table_rows():
     ]
 
 
+def test_status_reports_deleted_pods_as_terminating():
+    # 데스크탑: 1개로 줄이는 중이던 파드가 Running으로 세져 1개 시험이 "2"로 저장됐다.
+    pods = {"items": [
+        {"metadata": {"name": "vllm-a-1", "deletionTimestamp": "2026-11-17T14:38:20Z"},
+         "status": {"phase": "Running", "containerStatuses": [{"ready": True, "restartCount": 0}]}},
+        {"metadata": {"name": "vllm-a-2"},
+         "status": {"phase": "Running", "containerStatuses": [{"ready": True, "restartCount": 0}]}},
+    ]}  # fmt: skip
+    rows = status("ttalkkak", kubectl=Kubectl(pods=pods))
+    assert [r["phase"] for r in rows] == ["Terminating", "Running"]
+
+
 def test_down_deletes_files_in_reverse(tmp_path):
     k = Kubectl()
     down(deploy_dir(tmp_path), kubectl=k)
