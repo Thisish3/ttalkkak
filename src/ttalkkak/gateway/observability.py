@@ -299,6 +299,11 @@ def _stack(
                         ],
                         "target_label": "app",
                     },
+                    {
+                        # 실시간 탭의 복제본 표와 놀고 있는 복제본 판단이 by (pod)로 읽는다.
+                        "source_labels": ["__meta_kubernetes_pod_name"],
+                        "target_label": "pod",
+                    },
                 ],
             },
         ],

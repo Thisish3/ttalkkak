@@ -153,3 +153,22 @@ def test_exporter_rendered_only_when_image_is_set():
         render_observability(None, GatewayOptions(), chip)["50-observability.yaml"]
     )
     assert "dcgm-exporter" not in {d["metadata"]["name"] for d in docs}
+
+
+def test_prometheus_labels_each_series_with_its_pod():
+    docs = list(
+        yaml.safe_load_all(
+            render_observability(None, GatewayOptions())["50-observability.yaml"]
+        )
+    )
+    cm = next(
+        d
+        for d in docs
+        if d["kind"] == "ConfigMap" and "prometheus.yml" in d.get("data", {})
+    )
+    cfg = yaml.safe_load(cm["data"]["prometheus.yml"])
+    relabels = cfg["scrape_configs"][0]["relabel_configs"]
+    assert {
+        "source_labels": ["__meta_kubernetes_pod_name"],
+        "target_label": "pod",
+    } in relabels

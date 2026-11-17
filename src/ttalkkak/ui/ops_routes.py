@@ -37,6 +37,15 @@ from ttalkkak.ops_api.autoscaler import parse_decisions
 
 RUN_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 POD_NAME = re.compile(r"^[a-z0-9-]+$")
+
+
+def is_replica(name: str, deployment: str) -> bool:
+    """vLLM Deployment의 파드인지. 같은 접두어를 쓰는 EPP 파드(<deployment>-epp-...)는 뺀다."""
+    return bool(deployment) and (
+        name.startswith(f"{deployment}-") and not name.startswith(f"{deployment}-epp-")
+    )
+
+
 CONFIG_TTL_S = 10.0
 RECENT_DECISION_FILES = 2
 OPS_DEPLOY = "ttalkkak-ops"
@@ -255,7 +264,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             "decisions": recent_decisions(),
         }
         if auto and deployment and str(auto.get("max_replicas", "")).isdigit():
-            vllm_pods = [p for p in pods if p["name"].startswith(deployment)]
+            vllm_pods = [p for p in pods if is_replica(p["name"], deployment)]
             autoscale.update(
                 enabled=auto.get("enabled") == "true",
                 max_replicas=int(auto["max_replicas"]),
@@ -411,7 +420,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             await run_in_threadpool(deps.cluster_status) if deps.cluster_status else []
         )
         if not POD_NAME.fullmatch(pod) or pod not in {
-            p["name"] for p in pods if p["name"].startswith(f"{deployment}-")
+            p["name"] for p in pods if is_replica(p["name"], deployment)
         }:
             raise TtalkkakError("vLLM 파드가 아닙니다", 400)
         await run_in_threadpool(kube, ["delete", "pod", pod, "-n", deps.namespace])
@@ -453,7 +462,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         pods = deps.cluster_status() if deps.cluster_status else []
         replicas = sum(
             1 for p in pods
-            if p["name"].startswith(f"{deployment}-") and p["phase"] == "Running"
+            if is_replica(p["name"], deployment) and p["phase"] == "Running"
         )  # fmt: skip
         model = ""
         try:
