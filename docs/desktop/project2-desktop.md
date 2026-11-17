@@ -140,7 +140,7 @@ kubectl rollout status deployment/$DEP -n ttalkkak
 3. 결과를 `docs/results/project2/loadtest-1vs3.md`에 표로 남긴다. **시험마다 반드시 기록할 것:**
    - 탐색 단계 표(앱의 시험 상세 표와 같은 열): 순서 | 동시 사용자 | 달성률 | 신뢰 구간 | 판정(통과/실패/모름) | 오류율 | 중단 | 토큰/분
    - 중단 사유(`stop_reason`: `converged`, `max_streams_reached`, `objectives_unmet_at_minimum`, `indeterminate_at_minimum`, `max_probes_exhausted`, `constraint_stopped_escalation`)와 앱이 보여 주는 한국어 문구
-   - 탐색 후 각 단계의 `determined_requests`(`runs/loadtests/<id>.json`의 `stages[]`). 통과한 단계 중 74개 미만(달성률 목표 0.95에서 이 수보다 적으면 통과해도 신뢰 구간이 판정을 못 한다)이 있으면 그 시험은 판정 불가로 보고, 단계 시간을 늘려 다시 돌린다. 지금 코드(`loadtest.py`의 `PROBE_SECONDS = 30`)에서는 단계 시간을 화면이나 플래그로 바꿀 수 없다. 맥 세션이 설정 가능하게 만드는 중이므로, 그것이 들어오기 전에는 기본 30초로 돌리고 74개 미만이었다는 사실을 표에 적고 ledger에 적는다. 바꿀 방법이 생기면 `git pull` 뒤 `--help`나 화면에서 확인하고 그 방법을 ledger에 적는다.
+   - 탐색 후 각 단계의 `determined_requests`(`runs/loadtests/<id>.json`의 `stages[]`). 통과한 단계 중 74개 미만(달성률 목표 0.95에서 이 수보다 적으면 통과해도 신뢰 구간이 판정을 못 한다)이 있으면 그 시험은 판정 불가로 보고, 단계 시간을 늘려 다시 돌린다. 단계 시간은 부하 시험 카드의 "단계 시간" 입력(10~300초, 기본 30초, 준비 구간 5초보다 길어야 함)으로 바꾼다. API로 시작할 때는 `probe_seconds` 필드다. 74개 미만이었던 단계, 다시 돌린 단계 시간, 그 결과를 표와 ledger에 적는다.
    - 열린 부하 확인 결과: 확인 번호별 `확인 통과/확인 실패`, 수준(동시 사용자), 요청 속도, 달성률과 신뢰 구간, 오류율, 첫 글자 p99, 토큰/분. 최종 `confirmed`가 true인지 false인지. true이면 `capacity_tpm`은 확인에서 실제로 처리한 토큰/분이다. 모든 확인이 실패(`confirmed` false)이면 `capacity_tpm`은 탐색에서 나온 확인되지 않은 값이므로 용량으로 적지 않는다. 같은 기록의 `no_capacity_reason`, `error`, 그리고 ConfigMap 항목의 `unconfirmed_attempt`도 있으면 적는다
    - 무릎: 동시 사용자 수와 출력 토큰/초(없으면 이유)
    - 동시 사용자 수별 첫 글자 p99 곡선(앱의 겹쳐 그린 그래프, 1개와 3개 한 그래프)을 스크린샷으로
