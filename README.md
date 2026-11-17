@@ -1,7 +1,22 @@
-# ttalkkak (딸깍)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo_dark.png">
+    <img alt="ttalkkak 딸깍" src="docs/images/logo_light.png" width="560">
+  </picture>
+</p>
 
-GPU 서버로 ChatGPT 같은 AI API를 팔려는 회사를 위한 운영 도구입니다.
+<p align="center">
+GPU 서버로 ChatGPT 같은 AI API를 팔려는 회사를 위한 운영 도구입니다.<br>
 모델을 띄우고, 손님마다 사용량을 세고, 사람이 몰리면 서버를 늘려 줍니다.
+</p>
+
+<p align="center">
+<a href="#이런-상황에서-씁니다"><b>소개</b></a> ·
+<a href="#데스크톱-앱-내려받기"><b>앱 내려받기</b></a> ·
+<a href="docs/results/project2/summary.md"><b>실측 결과</b></a> ·
+<a href="https://thisish3.tistory.com/104"><b>개발 일지</b></a> ·
+<a href="docs/KNOWN_ISSUES.md"><b>알려진 문제</b></a>
+</p>
 
 <p align="center"><img src="docs/images/app_live.png" alt="ttalkkak 콘솔 앱 실시간 화면" width="860"></p>
 
