@@ -26,6 +26,11 @@ def up(
     skills: str = typer.Option(""),
     resume: str | None = None,
     chip: str | None = CHIP_OPT,
+    gpu_memory_utilization: float = typer.Option(
+        0.9,
+        help="vLLM 후보의 GPU 메모리 비율. 다른 프로세스가 GPU 메모리를 쓰면 낮춘다"
+        " (--resume으로 이미 만든 계획에는 적용되지 않음)",
+    ),
 ) -> None:
     _need_extra("huggingface_hub")
     Deps, run_up, deps_kw = _serving(chip)
@@ -35,7 +40,13 @@ def up(
     )
     try:
         run_dir, chosen = run_up(
-            model, _names(skills), ROOT / "runs", ROOT / "skills", deps, resume
+            model,
+            _names(skills),
+            ROOT / "runs",
+            ROOT / "skills",
+            deps,
+            resume,
+            gpu_memory_utilization=gpu_memory_utilization,
         )
     except TtalkkakError as err:
         typer.echo(f"오류: {err}", err=True)

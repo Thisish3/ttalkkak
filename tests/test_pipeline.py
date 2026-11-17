@@ -254,7 +254,7 @@ def test_sglang_fp8_without_baseline_is_rejected(tmp_path, monkeypatch):
             )
         ],
     )
-    monkeypatch.setattr(pipeline, "make_plan", lambda pr, req: plan)
+    monkeypatch.setattr(pipeline, "make_plan", lambda pr, req, *_: plan)
     _, p = run_up(M.model_id, ["tooly"], tmp_path, SKILLS, gpu_deps(Gpu()))
     assert p.chosen is None and p.rejected["c3"] == "기준 정확도 없음"
 

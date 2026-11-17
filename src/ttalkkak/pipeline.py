@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from ttalkkak.engines import ADAPTERS
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.pick import pick
-from ttalkkak.plan.candidates import make_plan
+from ttalkkak.plan.candidates import DEFAULT_GPU_MEMORY_UTILIZATION, make_plan
 from ttalkkak.platform import Platform
 from ttalkkak.report import render_report
 from ttalkkak.schemas import (
@@ -66,6 +66,7 @@ def run_up(
     deps: Deps,
     resume: str | None = None,
     run_id: str | None = None,
+    gpu_memory_utilization: float = DEFAULT_GPU_MEMORY_UTILIZATION,
 ) -> tuple[Path, Pick]:
     run_dir = runs_root / (resume or run_id or time.strftime("%Y%m%d-%H%M%S"))
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +111,7 @@ def run_up(
         if "plan" in state.done:
             plan = _load(run_dir, "plan.json", Plan)
         else:
-            plan = make_plan(pr, req)
+            plan = make_plan(pr, req, gpu_memory_utilization)
             _save(run_dir, "plan.json", plan)
             mark("plan")
         runnable = [c for c in plan.candidates if not c.blockers]

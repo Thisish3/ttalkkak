@@ -32,3 +32,9 @@ def test_fp8_roughly_doubles_context():
 def test_does_not_go_negative():
     big = QWEN7.model_copy(update={"weight_bytes": 20 * 2**30})
     assert max_context_fit(big, GPU8, "auto") == 0
+
+
+def test_max_context_fit_follows_utilization():
+    assert max_context_fit(QWEN7, GPU8, "auto", 0.8) < max_context_fit(
+        QWEN7, GPU8, "auto"
+    )

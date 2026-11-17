@@ -4,6 +4,7 @@ from ttalkkak.plan.parsers import parsers_for
 from ttalkkak.schemas import Candidate, Plan, ProbeResult, Requirements
 
 BASELINE_LEN = 4096  # gsm8k 프롬프트 + 생성이 들어가는 길이
+DEFAULT_GPU_MEMORY_UTILIZATION = 0.9
 
 
 def _parser_args(family: str, req: Requirements, engine: str) -> tuple[dict, list[str]]:
@@ -31,14 +32,23 @@ def _parser_args(family: str, req: Requirements, engine: str) -> tuple[dict, lis
     return args, blockers
 
 
-def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
+def make_plan(
+    probe: ProbeResult,
+    req: Requirements,
+    gpu_memory_utilization: float = DEFAULT_GPU_MEMORY_UTILIZATION,
+) -> Plan:
     m, g = probe.model, probe.gpu
     if m is None or g is None:
         raise TtalkkakError("로컬 서빙 계획에는 HF 모델 정보와 GPU가 필요합니다", 2)
+    if not 0 < gpu_memory_utilization <= 1:
+        raise TtalkkakError(
+            f"GPU 메모리 비율은 0보다 크고 1 이하여야 합니다: {gpu_memory_utilization}",
+            2,
+        )
     parser_args, parser_blockers = _parser_args(m.family, req, "vllm")
     out = []
     for i, kv in enumerate(["auto", "fp8"], start=1):
-        fit = max_context_fit(m, g, kv)
+        fit = max_context_fit(m, g, kv, gpu_memory_utilization)
         length = min(m.max_position, fit)
         blockers = list(parser_blockers)
         per_token = kv_bytes_per_token(m, kv)
@@ -58,7 +68,7 @@ def make_plan(probe: ProbeResult, req: Requirements) -> Plan:
                 args={
                     "kv_cache_dtype": kv,
                     "max_model_len": length,
-                    "gpu_memory_utilization": 0.9,
+                    "gpu_memory_utilization": gpu_memory_utilization,
                 }
                 | parser_args,
                 predicted={

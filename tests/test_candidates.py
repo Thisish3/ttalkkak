@@ -123,3 +123,32 @@ def test_missing_sglang_parser_blocks_only_c3(monkeypatch):
     by = {c.id: c for c in p.candidates}
     assert not by["c1"].blockers and any("sglang" in b for b in by["c3"].blockers)
     assert "enable_auto_tool_choice" not in by["c3"].args
+
+
+def test_gpu_memory_utilization_defaults_to_0_9():
+    p = make_plan(ProbeResult(model=M, gpu=G), req())
+    vllm = [c for c in p.candidates if c.engine == "vllm"]
+    assert all(c.args["gpu_memory_utilization"] == 0.9 for c in vllm)
+
+
+def test_lower_gpu_memory_utilization_is_used_and_shrinks_context():
+    base = make_plan(ProbeResult(model=M, gpu=G), req())
+    low = make_plan(ProbeResult(model=M, gpu=G), req(), gpu_memory_utilization=0.8)
+    vllm = [c for c in low.candidates if c.engine == "vllm"]
+    assert all(c.args["gpu_memory_utilization"] == 0.8 for c in vllm)
+    fp8 = lambda p: next(
+        c
+        for c in p.candidates
+        if c.engine == "vllm" and c.args["kv_cache_dtype"] == "fp8"
+    )
+    assert fp8(low).predicted["kv_tokens_fit"] < fp8(base).predicted["kv_tokens_fit"]
+
+
+def test_gpu_memory_utilization_out_of_range_is_rejected():
+    import pytest
+
+    from ttalkkak.errors import TtalkkakError
+
+    for bad in (0, -0.1, 1.5):
+        with pytest.raises(TtalkkakError):
+            make_plan(ProbeResult(model=M, gpu=G), req(), gpu_memory_utilization=bad)
