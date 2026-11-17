@@ -68,7 +68,7 @@ RTX 3060 Ti(8GB) 한 장으로 해 봤습니다. 숫자의 근거는 [docs/resul
 | 사업자: 웹 콘솔 (개요·원가·테넌트·사용량) | 됨 | 아직 |
 | 사업자: 지표 대시보드와 경보 (Prometheus, Grafana) | 됨 | 아직 |
 | 사업자: 새 모델을 올려도 되는지 확인 (설정 적용 여부, 정확도, tool calling) | 됨 | 아직 |
-| 몰려도 버티기 (복제본, 라우팅, 실시간 화면, 부하 시험, 자동 증감, 데스크톱 앱) | 구현됨 | 됨 (2026-11-17~18, RTX 3060 Ti, [결과](docs/results/project2/summary.md)) — 앱 일부 항목 미확인 |
+| 몰려도 버티기 (복제본, 라우팅, 실시간 화면, 부하 시험, 자동 증감, 데스크톱 앱) | 구현됨 | 됨 (2026-11-17~18, RTX 3060 Ti, [결과](docs/results/project2/summary.md)), 앱 일부 항목은 미확인 |
 | 작은 모델 증폭 (여러 번 풀고 고르기) | 안 됨 | - |
 | 도구와 스킬을 쓰는 터미널 에이전트 | 안 됨 (스킬 구조만 있음) | - |
 | 무중단 모델 교체, 유휴 시 축소 | 안 됨 | - |
@@ -123,10 +123,10 @@ ttalkkak ops bill --from-cluster --from 2026-11-01 --to 2026-12-01 --cost runs/<
 
 서빙이 "에러 없이 떴다"와 "에이전트가 그대로 써도 된다"는 다릅니다. 준 설정이 조용히 무시되거나, fp8 KV 캐시로 정확도가 무너졌는데 응답은 그럴듯하거나, reasoning 파서가 `<think>`를 본문으로 흘리는 경우가 그렇습니다. `ops up`은 후보 설정마다 엔진을 띄운 뒤 다음을 확인하고, 통과한 것 중 가장 빠른 설정을 고릅니다.
 
-- **applied**: 시작 로그와 `/metrics`에서 실제로 적용된 값을 읽어 요청과 대조
-- **accuracy**: gsm8k 100문항, 기준 대비 하락 5%p 이하
-- **agent**: tool call 파싱, `<think>` 누출, 스트리밍과 비스트리밍 일치, JSON schema 준수
-- **perf**: guidellm 부하
+- applied: 시작 로그와 `/metrics`에서 실제로 적용된 값을 읽어 요청과 대조
+- accuracy: gsm8k 100문항, 기준 대비 하락 5%p 이하
+- agent: tool call 파싱, `<think>` 누출, 스트리밍과 비스트리밍 일치, JSON schema 준수
+- perf: guidellm 부하
 
 결과는 `runs/<id>/`에 단계별 JSON과 `report.md`로 남습니다. 엔진은 vLLM과 SGLang, 하드웨어는 NVIDIA와 AMD(ROCm)를 코드로 지원합니다.
 
@@ -186,11 +186,11 @@ MCP 도구는 `langchain.mcp`(베타)로 연결합니다.
 
 GitHub Actions의 `desktop` 워크플로가 macOS(.dmg, Apple Silicon·Intel), Windows(.msi), Linux(.AppImage, .deb) 설치 파일을 만듭니다. 저장소의 Actions 탭에서 실행을 열고 맨 아래 Artifacts에서 내 OS용 파일을 내려받습니다. 서명하지 않은 빌드라서 처음 열 때 경고가 뜹니다.
 
-- **macOS**: .dmg를 열어 앱을 Applications로 옮긴 뒤, 앱을 우클릭하고 `열기`를 누릅니다. 그래도 막히면 시스템 설정 → 개인정보 보호 및 보안에서 `그래도 열기`를 누릅니다.
-- **Windows**: SmartScreen 창에서 `추가 정보` → `실행`을 누릅니다.
-- **Linux**: AppImage는 `chmod +x ttalkkak*.AppImage` 후 실행합니다. .deb은 `sudo apt install ./파일명.deb`로 설치합니다.
+- macOS: .dmg를 열어 앱을 Applications로 옮긴 뒤, 앱을 우클릭하고 `열기`를 누릅니다. 그래도 막히면 시스템 설정 → 개인정보 보호 및 보안에서 `그래도 열기`를 누릅니다.
+- Windows: SmartScreen 창에서 `추가 정보` → `실행`을 누릅니다.
+- Linux: AppImage는 `chmod +x ttalkkak*.AppImage` 후 실행합니다. .deb은 `sudo apt install ./파일명.deb`로 설치합니다.
 
-**서버에 연결**: 콘솔 서버를 도는 컴퓨터에서 운영자 토큰을 만들고 원격 모드로 엽니다. 앱에는 서버 주소와 이 토큰을 넣습니다.
+서버에 연결: 콘솔 서버를 도는 컴퓨터에서 운영자 토큰을 만들고 원격 모드로 엽니다. 앱에는 서버 주소와 이 토큰을 넣습니다.
 
 ```bash
 ttalkkak ops token new                     # 토큰을 한 번 출력 (다시 보기: token show, 폐기: token revoke)
@@ -220,13 +220,13 @@ GPU가 필요한 부분은 모두 주입 가능한 함수 뒤에 있고, 테스�
 - 앱 미확인: OS 알림 전달, 평문 HTTP 동의 초기화, API 키 창 Esc, 앱에서 서빙 실행
 - 사용량이 게이트웨이 재설치 뒤 비어 있음(접근 로그 보존, 원인 미확인)
 - 준비 안 된 파드가 부하 시험 복제본 수에 들어감, 공유 모델 캐시 정리 없음, 서명 없는 설치 파일
-- 한 GPU(8GB)에 bf16 1.5B는 복제본 1개, 4비트는 2개까지 — 2개로 나눠도 총 처리량은 같고(267k vs 273k 토큰/분) 열린 부하에서 버티는 동시 사용자만 늘었다. 여러 GPU에서의 확장은 아직
+- 한 GPU(8GB)에 bf16 1.5B는 복제본 1개, 4비트는 2개까지. 2개로 나눠도 총 처리량은 같고(267k vs 273k 토큰/분) 열린 부하에서 버티는 동시 사용자만 늘었다. 여러 GPU에서의 확장은 아직
 
-## 정직하게 적는 한계
+## 한계
 
-- **실제 GPU에서 처음부터 끝까지 돌린 적이 없습니다.** 엔진 로그 형식, 게이트웨이 CRD 필드, 지표 이름은 소스와 문서로 확인했고 실행으로는 확인하지 않았습니다. 확인 항목은 [docs/desktop/stage5-desktop.md](docs/desktop/stage5-desktop.md)에 있습니다.
-- **분산은 GPU 한 장 위의 복제본 여러 개입니다.** 기계 여러 대가 아닙니다.
-- **다른 칩은 실물이 없습니다.** 실제로 끼워 본 것은 NVIDIA GPU뿐입니다.
+- 실제 GPU에서 처음부터 끝까지 돌린 적이 없습니다. 엔진 로그 형식, 게이트웨이 CRD 필드, 지표 이름은 소스와 문서로 확인했고 실행으로는 확인하지 않았습니다. 확인 항목은 [docs/desktop/stage5-desktop.md](docs/desktop/stage5-desktop.md)에 있습니다.
+- 분산은 GPU 한 장 위의 복제본 여러 개입니다. 기계 여러 대가 아닙니다.
+- 다른 칩은 실물이 없습니다. 실제로 끼워 본 것은 NVIDIA GPU뿐입니다.
 - 잘못된 HF 모델 ID나 `config.json`이 없는 저장소는 아직 traceback으로 끝납니다.
 - 저장소 폴더에서 실행해야 기본 skill을 찾습니다.
 
