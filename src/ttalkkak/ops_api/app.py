@@ -240,7 +240,10 @@ def build_serve_app(
 
     cost = None
     if cost_path is not None and cost_path.is_file():
-        cost = CostResult.model_validate_json(cost_path.read_text(encoding="utf-8"))
+        raw = cost_path.read_text(encoding="utf-8")
+        # export는 원가 기록이 없으면 "{}"를 넣는다: 파일이 없는 것과 같이 본다.
+        if raw.strip() not in ("", "{}"):
+            cost = CostResult.model_validate_json(raw)
     if logs_from_cluster:
         log_source = sources.cluster_logs()
     elif logs is not None:

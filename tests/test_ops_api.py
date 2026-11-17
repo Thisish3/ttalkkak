@@ -216,6 +216,26 @@ def test_authz_always_sets_cache_salt_header_for_shared_tenants(env):
     assert r.headers["x-ttalkkak-cache-salt"] == ""
 
 
+def test_build_serve_app_treats_empty_cost_json_as_no_cost(tmp_path, env):
+    # export --target gateway가 원가 기록 없이 만든 ConfigMap 값은 "{}"이다.
+    from ttalkkak.ops_api.app import build_serve_app
+
+    _, raw, st = env
+    (tmp_path / "tenants.json").write_text(tenants_json(st))
+    (tmp_path / "cost.json").write_text("{}")
+    app = build_serve_app(
+        tenants_path=tmp_path / "tenants.json",
+        cost_path=tmp_path / "cost.json",
+        logs=None,
+        issuer=ISS,
+        client_id=CID,
+        jwks_url="https://unused.test/keys",
+    )
+    c = TestClient(app)
+    r = c.post("/authz/x", headers={"authorization": f"Bearer {raw}"})
+    assert r.headers["x-ttalkkak-tenant"] == "acme"
+
+
 def _loop_app(tmp_path, env, monkeypatch, **kw):
     from ttalkkak.ops_api import autoscaler
     from ttalkkak.ops_api.app import build_serve_app
