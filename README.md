@@ -1,69 +1,60 @@
-<h1 align="center">ttalkkak <sub>딸깍</sub></h1>
+# ttalkkak (딸깍)
 
-<p align="center"><b>추론 칩 위에 바로 올리는 LLM 서빙 운영 스택</b><br>
-모델을 고르면 띄우고, 재고, 고객을 받고, 몰리면 늘립니다.</p>
+GPU 서버로 ChatGPT 같은 AI API를 팔려는 회사를 위한 운영 도구입니다.
+모델을 띄우고, 손님마다 사용량을 세고, 사람이 몰리면 서버를 늘려 줍니다.
 
-<p align="center">
-<img alt="python" src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white">
-<img alt="kubernetes" src="https://img.shields.io/badge/k3s-kubernetes-326CE5?logo=kubernetes&logoColor=white">
-<img alt="vllm" src="https://img.shields.io/badge/engine-vLLM-30A2FF">
-<img alt="llm-d" src="https://img.shields.io/badge/router-llm--d-6E40C9">
-<img alt="tauri" src="https://img.shields.io/badge/app-Tauri%20v2-24C8DB?logo=tauri&logoColor=white">
-<img alt="tests" src="https://img.shields.io/badge/tests-577%20passed-2EA043">
-<img alt="validated" src="https://img.shields.io/badge/validated-RTX%203060%20Ti-76B900?logo=nvidia&logoColor=white">
-</p>
+<p align="center"><img src="docs/images/app_live.png" alt="ttalkkak 콘솔 앱 실시간 화면" width="860"></p>
 
-<p align="center"><img src="docs/images/app_live.png" alt="ttalkkak 콘솔 앱 실시간 화면" width="880"></p>
+## 이런 상황에서 씁니다
 
-## 왜 만드나
+A사가 GPU 서버에 오픈소스 LLM을 올려서 다른 회사들에 API로 팔려고 합니다. 그러려면 이런 것을 알아야 하고, 해야 합니다.
 
-NVIDIA는 GPU와 함께 NIM과 Dynamo를 내놓습니다. 칩만 팔지 않고, 그 칩 위에서 서비스를 돌리는 소프트웨어까지 함께 건넵니다. 다른 추론 칩 회사가 같은 자리를 채우려면 무엇이 필요한지, 실제로 만들어 보면서 확인하는 프로젝트입니다.
+1. 이 서버가 동시에 몇 명까지 버티는지
+2. 손님마다 키를 나눠 주고, 얼마나 썼는지 세서 청구하기
+3. 점심시간처럼 요청이 몰리면 모델을 하나 더 띄우고, 한가해지면 내리기
+4. 이걸 사무실 밖에서도 보기
 
-클라우드 사업자는 ttalkkak으로 모델을 검증해 올리고, 고객별 키와 한도를 걸고, 원가와 청구를 계산하고, 몰리는 트래픽에 맞춰 복제본을 늘리고 줄입니다. 이용자는 그 위에서 터미널 에이전트를 씁니다.
+ttalkkak이 이 네 가지를 맡습니다. 운영자는 노트북에 앱을 깔고 서버에 접속해서, 화면에서 보고 누르면 됩니다.
 
-<p align="center"><img src="docs/images/ttalkkak_overview.png" alt="ttalkkak 개요: 이용자·사업자·칩 회사, Envoy AI Gateway → llm-d 라우터 → vLLM 복제본, 테넌트·원가·청구·관측" width="900"></p>
+## 앱에서 할 수 있는 것
 
-## 프로젝트 2 · 몰려도 버티는 서빙
+- **실시간**: 지금 서버가 몇 % 찼는지 봅니다. 100 %의 기준은 감이 아니라, 미리 부하 시험으로 잰 값입니다.
+- **부하 시험**: 버튼을 누르면 가상의 손님을 점점 늘려 가며 "응답이 1초 안에 오는 최대 인원"을 찾습니다. 찾은 값을 한 번 더 확인한 뒤에야 기준으로 씁니다.
+- **자동 증감**: 오래 꽉 차 있으면 모델을 하나 더 띄우고, 한가하면 줄입니다. 언제, 왜 그랬는지 기록이 남고 알림도 옵니다.
+- **손님과 청구**: 손님별 API 키와 분당 사용 한도를 정하고, 사용량과 예상 청구 금액을 봅니다. CSV로도 받습니다.
+- **모델 올리기**: 새 모델이 이 서버에서 제대로 도는지(설정, 정확도, 도구 호출) 확인하고 띄웁니다.
 
-<p align="center"><img src="docs/images/project2_architecture.png" alt="프로젝트 2 구조: 운영자 앱 → 콘솔 서버(용량 측정, 자동 증감) → Envoy AI Gateway → llm-d → vLLM 복제본" width="900"></p>
+앱은 macOS, Windows, Linux에서 돌아가고, 서버 접속 열쇠(토큰)는 운영체제의 암호 보관함에 둡니다.
 
-- **용량을 숫자로.** guidellm의 goodput 탐색으로 "요청 95 %가 첫 글자 1초 안"을 지키는 동시 사용자 수를 찾고, 그 속도의 열린 부하로 한 번 더 확인한 값만 용량으로 씁니다.
-- **넘치면 늘리고, 한가하면 줄입니다.** 용량 사용률과 대기열을 보고 복제본을 조절하고, 결정과 이유를 모두 기록합니다.
-- **어디서든 같은 화면.** 운영자 앱은 macOS·Windows·Linux에서 원격 콘솔에 붙습니다. 토큰은 OS 키체인에만 둡니다.
+<p align="center"><img src="docs/images/app_loadtest.png" alt="부하 시험 결과: 손님 수에 따른 응답 시간" width="860"></p>
 
-RTX 3060 Ti(8GB) 한 장에서 실제로 돌린 결과입니다. 자세한 근거는 [docs/results/project2](docs/results/project2/summary.md)에 있습니다.
+## 실제로 돌려 봤습니다
 
-| 확인 | 결과 |
+집에 있는 RTX 3060 Ti(8GB) 한 장으로 해 봤습니다. 자세한 기록은 [docs/results/project2](docs/results/project2/summary.md)에 있습니다.
+
+| 해 본 것 | 결과 |
 |---|---|
-| GPU 한 장에 올라가는 복제본 | bf16 1.5B는 1개, 4비트 AWQ는 2개 |
-| 복제본 1개 vs 2개 | 총 처리량은 같음(267k vs 273k 토큰/분). 열린 부하에서 SLO를 지킨 동시 사용자는 16 → 36명 |
-| 자동 증감 | 사용률 110 %가 2분 → 1→2, 새 복제본 준비 110초, 유휴 → 2→1, 오류율 0 |
-| 복제본 강제 종료 | 재기동 144초 동안 오류율 0 |
-| 고객별 한도 | 한도를 넘는 요청은 429, 콘솔 집계와 게이트웨이 로그가 일치 |
+| GPU 한 장에 모델을 몇 개 띄울 수 있나 | 보통 모델(1.5B)은 1개, 4비트로 줄인 모델은 2개 |
+| 모델 1개와 2개의 차이 | 처리하는 양은 거의 같았지만, 손님이 계속 몰려올 때 1초 안에 응답한 인원은 16명에서 36명으로 늘었습니다 |
+| 자동 증감 | 사용률이 110 %로 2분 넘게 가자 하나를 더 띄웠고(준비 110초), 한가해지자 다시 줄였습니다. 그동안 실패한 요청은 없었습니다 |
+| 모델 하나를 강제로 끄기 | 다시 뜨는 144초 동안에도 실패한 요청이 없었습니다 |
+| 손님별 한도 | 한도를 넘은 요청은 거절했고, 앱의 사용량 숫자가 서버 로그와 같았습니다 |
 
-<p align="center"><img src="docs/images/app_loadtest.png" alt="부하 시험: 시험 기록별 동시 사용자 대 첫 글자 p99" width="880"></p>
+## 어떻게 만들었나
 
-## 왜 이 앱을 쓰나
+<p align="center"><img src="docs/images/project2_architecture.png" alt="구조: 운영자 앱 → 콘솔 서버(용량 측정, 자동 증감) → Envoy AI Gateway → llm-d → vLLM" width="860"></p>
 
-서빙 클러스터를 운영할 때 보통은 터미널의 `kubectl`, Grafana 대시보드, 부하 시험 스크립트, 과금 스프레드시트를 오가며 판단합니다. ttalkkak 콘솔은 그 판단에 필요한 것을 한 화면에 모읍니다.
+쿠버네티스(k3s) 위에 추론 엔진 vLLM을 띄우고, 그 앞에 요청을 나눠 주는 llm-d와 키·한도를 확인하는 Envoy AI Gateway를 둡니다. 부하 시험은 vLLM 프로젝트의 guidellm을 쓰고, 앱은 Tauri로 만들었습니다. 왜 이렇게 재는지는 블로그 글([부하 시험](https://thisish3.tistory.com/103), [서빙 지표](https://thisish3.tistory.com/99), [개발 일지 #3](https://thisish3.tistory.com/104))에 적었습니다.
 
-| 운영자가 묻는 것 | 보통의 방법 | ttalkkak 콘솔 |
-|---|---|---|
-| 지금 서버가 얼마나 찼나? | GPU·큐 지표를 보고 감으로 판단 | **잰 용량** 대비 사용률. 그 용량이 어떤 부하 시험(언제, 복제본 몇 개, 어떤 SLO)에서 나왔는지 함께 보여 줌 |
-| 몇 명까지 받을 수 있나? | 스크립트로 부하를 걸고 그래프를 눈으로 비교 | 버튼 하나로 goodput 탐색 → 열린 부하 확인. 신뢰 구간까지 붙은 단계 표와 시험별 겹친 그래프 |
-| 왜 복제본이 늘었나? | 컨트롤러 로그를 뒤짐 | 결정마다 시각·이유·전후 복제본 수·준비 시간이 남는 결정 기록, OS 알림 |
-| 누가 얼마나 썼고 얼마를 받나? | 게이트웨이 로그를 따로 집계 | 고객별 한도 소진률, 사용량과 추정 청구, CSV |
-| 집 밖에서도 볼 수 있나? | VPN과 kubeconfig를 노트북에 둠 | 노트북에는 앱과 운영자 토큰만. 클러스터 자격 증명은 서버 밖으로 나가지 않음 |
+이 프로젝트는 "추론 칩 회사가 칩과 함께 주는 소프트웨어"를 목표로 합니다. NVIDIA가 GPU와 함께 NIM, Dynamo를 주는 것처럼요. 그래서 칩마다 다른 값은 코드가 아니라 설정 파일(`chips/*.yaml`)에 두어, 다른 칩도 끼울 수 있게 했습니다.
 
-손이 닿는 조치(복제본 끄기, 키 폐기, 부하 시험)는 무엇을 얼마나 하는지 문장으로 보여 주는 확인 창을 거칩니다. 위험한 평문 연결에는 따로 동의를 받습니다.
-
-## 누가 무엇을 하나
+<p align="center"><img src="docs/images/ttalkkak_overview.png" alt="ttalkkak 전체 그림: 이용자·사업자·칩 회사" width="860"></p>
 
 | 누구 | 하는 일 | 쓰는 것 |
 |---|---|---|
-| 칩 회사 | 자기 칩과 추론 엔진을 칩 설정 파일로 끼워 넣습니다 | `chips/*.yaml` |
-| 클라우드 사업자 | 모델 검증과 배포, 고객·키·한도, 원가·청구, 용량과 증감 | 콘솔 앱, `ttalkkak ops` |
-| 이용자 | 터미널에서 에이전트와 대화합니다. 턴마다 토큰과 예상 요금이 보입니다 | `ttalkkak` |
+| 칩 회사 | 자기 칩과 추론 엔진을 설정 파일로 끼워 넣습니다 | `chips/*.yaml` |
+| API를 파는 회사(운영자) | 모델 올리기, 손님·키·한도, 원가·청구, 용량과 증감 | 콘솔 앱, `ttalkkak ops` |
+| API를 쓰는 손님 | 터미널에서 AI 에이전트와 대화합니다. 매번 쓴 양과 예상 요금이 보입니다 | `ttalkkak` |
 
 ## 기능과 상태
 
@@ -174,7 +165,7 @@ MCP 도구는 `langchain.mcp`(베타)로 연결합니다.
 
 칩마다 다른 값(감지 명령, 엔진 이미지, 쿠버네티스 자원 이름, 전력·지표 이름)은 코드가 아니라 `chips/*.yaml` 형식의 설정 파일에 있습니다. 기본으로 [src/ttalkkak/data/chips/](src/ttalkkak/data/chips/)에 `nvidia-gpu.yaml`, `amd-gpu.yaml`이 들어 있고, 값이 `<...>`인 견본 `example-npu.yaml`이 형식을 보여 줍니다. 새 칩은 파일 하나를 `~/.ttalkkak/chips/`(또는 `TTALKKAK_CHIPS_DIR`가 가리키는 폴더)에 두면 되고, `--chip <이름 또는 yaml 경로>`로 고릅니다(`ttalkkak ops export`, `ttalkkak ops ui`). 형식이 틀리면 칸 이름이 든 한국어 오류가 납니다.
 
-## 데스크톱 콘솔 앱: 무엇을 하나
+## 앱 탭별 설명
 
 운영자가 자기 컴퓨터(macOS·Windows·Linux)에 설치해서, 다른 곳(GPU 서버)에서 도는 ttalkkak 콘솔 서버에 운영자 토큰으로 붙는 앱입니다(Tauri v2). 화면 파일은 브라우저 콘솔과 같고, 앱은 요청을 Rust 쪽에서만 보내 토큰이 화면(JS)에 닿지 않습니다.
 
