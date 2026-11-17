@@ -118,6 +118,10 @@ mcp_servers:
 
 MCP 도구는 `langchain.mcp`(베타)로 연결합니다.
 
+## 부하 시험
+
+콘솔(앱의 실시간 탭)의 부하 시험은 guidellm 0.8.1의 goodput 탐색으로 "요청의 95 %가 첫 글자 1초 안에 오는" 가장 높은 동시 사용자 수를 찾고(단계마다 30초, 처음 5초는 측정에서 제외), 찾은 수준에서 잰 요청 속도의 75 %로 60초 동안 열린 부하(포아송) 확인을 합니다. 확인을 통과한 실행이 실제로 처리한 토큰/분이 용량이 되고, 못 지키면 한 단계 낮은 수준으로 내려가 다시 확인합니다(최대 3번). 단계별 표, 중단 사유, 확인 결과, 처리량이 꺾이는 무릎이 `runs/loadtests/`와 화면에 남습니다. 최대 약 8분 걸립니다. 확인에 실패한 기록은 용량으로 쓰지 않습니다.
+
 ## 칩 설정 파일
 
 칩마다 다른 값(감지 명령, 엔진 이미지, 쿠버네티스 자원 이름, 전력·지표 이름)은 코드가 아니라 `chips/*.yaml` 형식의 설정 파일에 있습니다. 기본으로 [src/ttalkkak/data/chips/](src/ttalkkak/data/chips/)에 `nvidia-gpu.yaml`, `amd-gpu.yaml`이 들어 있고, 값이 `<...>`인 견본 `example-npu.yaml`이 형식을 보여 줍니다. 새 칩은 파일 하나를 `~/.ttalkkak/chips/`(또는 `TTALKKAK_CHIPS_DIR`가 가리키는 폴더)에 두면 되고, `--chip <이름 또는 yaml 경로>`로 고릅니다(`ttalkkak ops export`, `ttalkkak ops ui`). 형식이 틀리면 칸 이름이 든 한국어 오류가 납니다.
@@ -134,14 +138,12 @@ GitHub Actions의 `desktop` 워크플로가 macOS(.dmg, Apple Silicon·Intel), W
 
 ```bash
 ttalkkak ops token new                     # 토큰을 한 번 출력 (다시 보기: token show, 폐기: token revoke)
+kubectl port-forward -n ttalkkak svc/prometheus 9090:9090 &   # 실시간 화면이 읽을 Prometheus
 ttalkkak ops ui --remote --prometheus-url http://127.0.0.1:9090 --gateway-url http://<게이트웨이 주소>/v1
 ```
 
 `--remote`는 `tailscale ip -4`가 알려 주는 tailnet 주소에만 열고(tailscale이 없으면 `--host`를 직접 줘야 시작됩니다), tailnet 안에서도 평문 HTTP라는 경고를 냅니다. 앱은 `http://100.x.x.x:8787` 같은 Tailscale 주소 말고 다른 `http://` 주소에는 위험 동의 체크를 요구합니다. 자세한 확인 절차는 [프로젝트 2 데스크탑 지시문](docs/desktop/project2-desktop.md)에 있습니다.
 
-### 부하 시험
-
-콘솔(앱의 실시간 탭)의 부하 시험은 guidellm 0.8.1의 goodput 탐색으로 "요청의 95 %가 첫 글자 1초 안에 오는" 가장 높은 동시 사용자 수를 찾고(단계마다 30초, 처음 5초는 측정에서 제외), 찾은 수준에서 잰 요청 속도의 75 %로 60초 동안 열린 부하(포아송) 확인을 합니다. 확인을 통과한 실행이 실제로 처리한 토큰/분이 용량이 되고, 못 지키면 한 단계 낮은 수준으로 내려가 다시 확인합니다(최대 3번). 단계별 표, 중단 사유, 확인 결과, 처리량이 꺾이는 무릎이 `runs/loadtests/`와 화면에 남습니다. 최대 약 8분 걸립니다. 확인에 실패한 기록은 용량으로 쓰지 않습니다.
 
 ## 개발
 
