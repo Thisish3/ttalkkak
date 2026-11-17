@@ -809,10 +809,10 @@ function probeVerdict(p) {
 
 function probeTable(r) {
   const rows = (r.stages || []).map((p, i) => `<tr><td class="num">${i + 1}</td><td class="num">${num(p.users)}명</td>
-    <td class="num">${ratio(p.attainment)}</td><td class="num">${span(p.attainment_lower, p.attainment_upper)}</td>
+    <td class="num">${ratio(p.attainment)}</td><td class="num">${span(p.attainment_lower, p.attainment_upper)}</td><td class="num">${num(p.determined_requests)}</td>
     <td>${probeVerdict(p)}</td><td class="num">${ratio(p.error_rate)}</td><td>${p.aborted ? badge("mut", "중단됨") : "-"}</td><td class="num">${num(p.tokens_per_min)}</td></tr>`).join("");
   if (!rows) return "";
-  return `<div class="tablewrap"><table><thead><tr><th>순서</th><th>동시 사용자</th><th>달성률</th><th>신뢰 구간</th><th>판정</th><th>오류율</th><th>중단</th><th>토큰/분</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="tablewrap"><table><thead><tr><th>순서</th><th>동시 사용자</th><th>달성률</th><th>신뢰 구간</th><th>요청 수</th><th>판정</th><th>오류율</th><th>중단</th><th>토큰/분</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function confirmText(checks) {
@@ -832,9 +832,13 @@ function kneeText(k) {
 function loadtestDetail(r, open) {
   if (r.method !== "goodput" || r.running) return "";
   const target = `요청 ${num((r.target_attainment || 0) * 100)} %가 첫 글자 ≤ ${secText(r.ttft_target_ms)}`;
+  const checks = Array.isArray(r.confirms) ? r.confirms : [];
+  const unconfirmed = checks.length > 0 && !checks.some((c) => c.held);
   const cap = r.capacity_tpm == null
     ? `<div>${badge("mut", "용량 기록 없음")} ${esc(r.no_capacity_reason || "")}</div>`
-    : `<div>용량: 동시 사용자 ${num(r.capacity_streams)}명에서 ${num(r.capacity_tpm)} 토큰/분</div>`;
+    : unconfirmed
+      ? `<div>${badge("bad", "용량: 확인 실패 (참고: 닫힌 부하 " + num(r.capacity_tpm) + " 토큰/분)")}</div>`
+      : `<div>용량: 동시 사용자 ${num(r.capacity_streams)}명에서 ${num(r.capacity_tpm)} 토큰/분</div>`;
   return `<details class="lt-detail"${open ? " open" : ""}><summary>탐색 ${(r.stages || []).length}회 · ${esc(STOP_REASON[r.stop_reason] || r.stop_reason || "-")}</summary>
     <div class="mut">목표: ${esc(target)}</div>${cap}${confirmText(r.confirms)}${kneeText(r.knee)}${probeTable(r)}</details>`;
 }
@@ -989,10 +993,11 @@ async function liveAct(e) {
 
 async function startLoadtest() {
   const users = Number($("lt-users").value), on = $("lt-auto").checked;
+  const secs = Number($("lt-secs").value) || 30;
   try {
-    const r = await mutate("/api/loadtest", { max_users: users, autoscale_on: on }, {
+    const r = await mutate("/api/loadtest", { max_users: users, autoscale_on: on, probe_seconds: secs }, {
       title: "부하 시험 시작",
-      message: `guidellm이 동시 사용자를 1명부터 두 배씩 늘리다가(최대 ${users}명) 목표를 놓친 수준과 지킨 수준 사이를 반씩 좁힙니다. 단계마다 30초(처음 5초는 측정에서 뺌)씩 최대 10단계를 돌린 뒤, 찾은 수준에서 잰 요청 속도의 75 %로 60초 동안 열린 부하(포아송)를 보냅니다. 확인에 실패하면 한 단계 낮은 수준으로 내려가며 최대 3번 확인합니다(최대 약 8분). 지금 떠 있는 복제본 전체가 GPU를 쓰고 일반 요청은 느려질 수 있습니다. ` +
+      message: `guidellm이 동시 사용자를 1명부터 두 배씩 늘리다가(최대 ${users}명) 목표를 놓친 수준과 지킨 수준 사이를 반씩 좁힙니다. 단계마다 ${secs}초(처음 5초는 측정에서 뺌)씩 최대 10단계를 돌린 뒤, 찾은 수준에서 잰 요청 속도의 75 %로 60초 동안 열린 부하(포아송)를 보냅니다. 확인에 실패하면 한 단계 낮은 수준으로 내려가며 최대 3번 확인합니다(최대 약 ${num((10 * secs + 180) / 60)}분). 지금 떠 있는 복제본 전체가 GPU를 쓰고 일반 요청은 느려질 수 있습니다. ` +
         (on ? "자동 증감을 켠 채로 시험하므로 결과는 용량 기록에 저장되지 않습니다." : "끝나면 현재 복제본 수의 용량 기록으로 저장됩니다."),
       confirmText: "시작",
     });

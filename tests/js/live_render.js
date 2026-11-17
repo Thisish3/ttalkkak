@@ -366,6 +366,17 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   run("renderLoadtests(PROG)");
   has("lt-progress", "열린 부하로 확인 중");
 
+  // Task G fix round 2: unconfirmed capacity is not shown as 용량; probe request counts
+  put("UNC", { ...gRun, capacity_tpm: 21500, capacity_streams: 2 });
+  const unc = run("loadtestDetail(UNC, true)");
+  if (unc.includes("용량: 동시 사용자")) fail("unconfirmed run shows the closed-loop value as 용량");
+  if (!unc.includes("용량: 확인 실패 (참고: 닫힌 부하 21,500 토큰/분)")) fail("unconfirmed label missing: " + unc.slice(0, 400));
+  if (!unc.includes("<th>요청 수</th>") || !unc.includes(">150<")) fail("probe table lacks determined request counts");
+  put("OKR", { ...gRun, confirms: [{ ...gRun.confirms[0], held: true }] });
+  if (!run("loadtestDetail(OKR, true)").includes("용량: 동시 사용자 2명에서 2,000 토큰/분")) fail("confirmed capacity line missing");
+  put("NOCHK", { ...gRun, confirms: [], capacity_tpm: null, capacity_streams: null, no_capacity_reason: "x" });
+  if (run("loadtestDetail(NOCHK, true)").includes("확인 실패")) fail("no-capacity run labelled 확인 실패");
+
   put("REALAPI", realApi);
   run("api = REALAPI");
   // M4: browser fetch is aborted after 8 s

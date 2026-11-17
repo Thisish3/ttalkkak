@@ -626,3 +626,43 @@ def test_fake_console_seeds_goodput_runs_and_record(tmp_path, store):
         rec = parse_capacity(fc.capacity_json(state, now))[2]
         assert rec.method == "goodput" and rec.confirmed is confirmed
     assert parse_capacity(fc.capacity_json("attempt", now))[2].unconfirmed_attempt
+
+
+# ---- Task G fix round 2 ----
+
+
+def test_stream_run_kills_the_process_when_the_line_callback_raises():
+    import sys
+    import time
+
+    from ttalkkak.live.loadtest import stream_run
+
+    code = "import sys, time; print('x', flush=True); time.sleep(60)"
+
+    def boom(line):
+        raise ValueError("callback broke")
+
+    t0 = time.monotonic()
+    with pytest.raises(ValueError, match="callback broke"):
+        stream_run([sys.executable, "-c", code], check=True, timeout=120, on_line=boom)
+    assert time.monotonic() - t0 < 15
+
+
+def test_probe_seconds_is_chosen_per_test_and_recorded(tmp_path, store):
+    calls = []
+    r = runner(tmp_path, store, fake_guidellm(calls=calls), Kubectl())
+    rec = r.status(r.start(64, replicas=1, autoscale_on=True, probe_seconds=45))
+    assert "kind=max_duration,seconds=45" in calls[0]
+    assert rec["probe_seconds"] == 45
+    rec = r.status(r.start(64, replicas=1, autoscale_on=True))
+    from ttalkkak.live.loadtest import PROBE_SECONDS
+
+    assert rec["probe_seconds"] == PROBE_SECONDS == 30
+
+
+@pytest.mark.parametrize("bad", [5, 301, True, 30.5])
+def test_probe_seconds_out_of_range(bad):
+    from ttalkkak.live.loadtest import check_probe_seconds
+
+    with pytest.raises(ValueError):
+        check_probe_seconds(bad)

@@ -25,7 +25,12 @@ from ttalkkak.capacity import (
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
-from ttalkkak.live.loadtest import LoadTestRunner, check_max_users
+from ttalkkak.live.loadtest import (
+    PROBE_SECONDS,
+    LoadTestRunner,
+    check_max_users,
+    check_probe_seconds,
+)
 from ttalkkak.live.prom import PromError
 from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
 from ttalkkak.ops_api.autoscaler import parse_decisions
@@ -437,6 +442,11 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         if not isinstance(users, int) or not isinstance(on, bool):
             raise TtalkkakError("max_users는 정수, autoscale_on은 불리언입니다", 400)
         check_max_users(users)
+        probe_seconds = b.get("probe_seconds", PROBE_SECONDS)
+        try:
+            check_probe_seconds(probe_seconds)
+        except ValueError as err:
+            raise TtalkkakError(str(err), 400) from err
         if runner.busy:
             raise TtalkkakError("이미 부하 시험이 실행 중입니다", 409)
         deployment, _ = autoscale_config()
@@ -453,7 +463,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
             pass
         if not model or replicas < 1:
             raise TtalkkakError("실행 중인 vLLM 모델을 찾지 못했습니다", 503)
-        return runner.start(users, replicas, on, model)
+        return runner.start(users, replicas, on, model, probe_seconds=probe_seconds)
 
     @guarded
     async def loadtest_start(request):

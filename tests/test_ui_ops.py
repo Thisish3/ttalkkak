@@ -173,6 +173,8 @@ def test_rejected_second_loadtest_keeps_running_model(tmp_path):
         lt.LoadTestRunner.__init__ = orig
     assert r.status_code == 409 and runner.model == "old"
     assert post(c, "/api/loadtest", {"max_users": "x"}).status_code == 400
+    bad = {"max_users": 5, "probe_seconds": 2}
+    assert post(c, "/api/loadtest", bad).status_code == 400
 
 
 GOOD = (

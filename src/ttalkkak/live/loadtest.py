@@ -70,6 +70,13 @@ def stream_run(cmd: list[str], *, check: bool, timeout: float, on_line=None):
                 if on_line is not None:
                     on_line(line)
             rc = proc.wait()
+        except BaseException:
+            proc.kill()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            raise
         finally:
             timer.cancel()
     if timed_out.is_set():
@@ -77,6 +84,21 @@ def stream_run(cmd: list[str], *, check: bool, timeout: float, on_line=None):
     if check and rc != 0:
         raise subprocess.CalledProcessError(rc, cmd)
     return subprocess.CompletedProcess(cmd, rc)
+
+
+PROBE_SECONDS_RANGE = (10, 300)
+
+
+def check_probe_seconds(seconds: int) -> None:
+    low, high = PROBE_SECONDS_RANGE
+    if (
+        isinstance(seconds, bool)
+        or not isinstance(seconds, int)
+        or not (low <= seconds <= high)
+    ):
+        raise ValueError(f"단계 시간은 {low}~{high}초 정수여야 합니다")
+    if seconds <= WARMUP_SECONDS:
+        raise ValueError(f"단계 시간은 워밍업 {WARMUP_SECONDS}초보다 길어야 합니다")
 
 
 def check_max_users(max_users: int) -> None:
@@ -125,8 +147,10 @@ class LoadTestRunner:
         replicas: int,
         autoscale_on: bool,
         model: str | None = None,
+        probe_seconds: int = PROBE_SECONDS,
     ) -> str:
         check_max_users(max_users)
+        check_probe_seconds(probe_seconds)
         with self._lock:
             if self._active is not None:
                 raise TtalkkakError("이미 부하 시험이 실행 중입니다", 409)
@@ -147,6 +171,7 @@ class LoadTestRunner:
             "autoscale_on": autoscale_on,
             "method": "goodput",
             "max_users": max_users,
+            "probe_seconds": probe_seconds,
             "ttft_target_ms": self.ttft_target_ms,
             "itl_target_ms": self.itl_target_ms,
             "target_attainment": self.target_attainment,
@@ -296,10 +321,10 @@ class LoadTestRunner:
             cmd = goodput_cmd(
                 self.gateway_url, self.model, DATA, out, **common,
                 attainment=self.target_attainment, max_streams=arg,
-                probe_seconds=PROBE_SECONDS, warmup_seconds=WARMUP_SECONDS,
+                probe_seconds=record["probe_seconds"], warmup_seconds=WARMUP_SECONDS,
                 tolerance=SEARCH_TOLERANCE, max_probes=MAX_PROBES,
             )  # fmt: skip
-            timeout = MAX_PROBES * (PROBE_SECONDS + 30) + 300
+            timeout = MAX_PROBES * (record["probe_seconds"] + 30) + 300
 
             def on_line(line: str) -> None:
                 m = STRATEGY_LINE.search(line)
