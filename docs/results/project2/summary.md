@@ -39,5 +39,5 @@
 | 콘솔에서 부하 시험을 돌려 복제본 1개와 3개의 결과를 한 그래프에 겹쳐 볼 수 있고, 그 숫자가 결과 문서로 남는다 | **미확인** (3개는 이 GPU에서 뜨지 않아 1개 vs 2개로 함. 숫자는 문서에 있음. 겹친 그래프 화면은 맥 확인 대기) | `loadtest-1vs2.md`, `loadtest-r1*.json`, `loadtest-r2*.json`, `capacity-configmap.json` |
 | 복제본 하나를 꺼도 서비스가 이어지는지 실측 결과가 있다 | **통과** | `kill-replica.md`, `kill-replica-podwatch.log`, `kill-replica.json` |
 | 부하를 올렸다 내렸을 때 복제본이 자동으로 늘고 주는 실측 기록(시각, 이유, 준비 시간, 그동안의 첫 글자 p99)이 있다 | **통과** (감소는 지시문 규칙이 아닌 "놀고 있는 복제본" 규칙으로 일어남, R27) | `autoscale.md`, `autoscale-ops-log.txt`, `autoscale-samples.jsonl` |
-| 데스크탑 앱 설치 파일이 macOS·Windows·Linux로 빌드되고, 맥 앱이 데스크탑의 콘솔 서버에 토큰으로 붙어 실시간 화면이 돈다 | **미확인** (데스크탑에 `gh`와 `~/.gh`가 없고 저장소가 비공개라 Actions 실행을 확인하지 못함. 맥 연결은 맥 확인 대기) | - |
+| 데스크탑 앱 설치 파일이 macOS·Windows·Linux로 빌드되고, 맥 앱이 데스크탑의 콘솔 서버에 토큰으로 붙어 실시간 화면이 돈다 | **미확인** (빌드는 통과: 아래 근거. 맥 앱 연결과 실시간 화면은 10절 맥 확인 대기) | `ci-desktop-build.md` |
 | NVIDIA·AMD의 박힌 값이 설정 파일로 옮겨졌고 기존 테스트가 모두 통과한다. 견본 칩 파일이 형식 검사를 통과한다 | **통과** (`pytest -q`: 573 passed, 4 skipped. `example-npu.yaml` 포함 3개 모두 `load_chip` 통과) | `pytest.txt`, `chips-check.txt` |
