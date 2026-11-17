@@ -1,0 +1,9 @@
+NAME                                           READY   STATUS    RESTARTS        AGE   IP           NODE              NOMINATED NODE   READINESS GATES
+dex-5b9c467774-66f4m                           1/1     Running   1 (22m ago)     39m   10.42.0.36   desktop-p7rd27m   <none>           <none>
+redis-74964f5fc4-nfnhb                         1/1     Running   1 (22m ago)     39m   10.42.0.35   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-2cz4r   0/1     Unknown   0               39m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-2scs4   0/1     Unknown   0               39m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-5dxjn   0/1     Running   1 (110s ago)    22m   10.42.0.42   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-g4sl2   0/1     Running   2 (71s ago)     22m   10.42.0.40   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-rs4wt   0/1     Unknown   0               39m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-zgfj8   0/1     Running   1 (8m57s ago)   22m   10.42.0.41   desktop-p7rd27m   <none>           <none>

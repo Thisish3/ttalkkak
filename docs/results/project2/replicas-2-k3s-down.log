@@ -1,0 +1,26 @@
+$ .venv/bin/ttalkkak ops export --run 20261117-193453 --target gateway --out deploy/ --replicas 2 --max-replicas 2 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+deploy/00-namespace.yaml
+deploy/10-redis.yaml
+deploy/15-dex.yaml
+deploy/20-vllm.yaml
+deploy/25-ops-serve.yaml
+deploy/30-llmd.yaml
+deploy/40-gateway.yaml
+deploy/50-observability.yaml
+deploy/README.md
+deploy/alerts.yaml
+deploy/grafana/gpu.json
+deploy/grafana/serving.json
+deploy/grafana/usage.json
+exit=0
+        - --gpu-memory-utilization
+        - '0.42'
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 1500
+2026-11-17T20:27:01+09:00
+오류: 00-namespace.yaml 적용 실패: error: error validating "deploy/00-namespace.yaml": error validating data: failed to download openapi: Get "https://127.0.0.1:6443/openapi/v2?timeout=32s": dial tcp 127.0.0.1:6443: connect: connection refused; if you choose to ignore these errors, turn validation off with --validate=false
+exit=1
+2026-11-17T20:27:02+09:00
+The connection to the server 127.0.0.1:6443 was refused - did you specify the right host or port?
+memory.used [MiB], memory.total [MiB]
+344 MiB, 8192 MiB
+The connection to the server 127.0.0.1:6443 was refused - did you specify the right host or port?

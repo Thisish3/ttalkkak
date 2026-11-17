@@ -1,0 +1,49 @@
+$ .venv/bin/ttalkkak ops export --run 20261117-193453 --target gateway --out deploy/ --replicas 2 --max-replicas 2 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+deploy/00-namespace.yaml
+deploy/10-redis.yaml
+deploy/15-dex.yaml
+deploy/20-vllm.yaml
+deploy/25-ops-serve.yaml
+deploy/30-llmd.yaml
+deploy/40-gateway.yaml
+deploy/50-observability.yaml
+deploy/README.md
+deploy/alerts.yaml
+deploy/grafana/gpu.json
+deploy/grafana/serving.json
+deploy/grafana/usage.json
+exit=0
+        - --gpu-memory-utilization
+        - '0.42'
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 1500
+2026-11-17T20:28:28+09:00
+오류: ttalkkak-20261117-193453-c1이 1500초 안에 준비되지 않았습니다
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  54m   deployment-controller  Scaled up replica set ttalkkak-20261117-193453-c1-6db678d779 from 0 to 3
+  Normal  ScalingReplicaSet  14m   deployment-controller  Scaled down replica set ttalkkak-20261117-193453-c1-6db678d779 from 3 to 0
+  Normal  ScalingReplicaSet  11m   deployment-controller  Scaled up replica set ttalkkak-20261117-193453-c1-858b76f486 from 0 to 2
+exit=1
+2026-11-17T20:40:00+09:00
+NAME                                           READY   STATUS                     RESTARTS       AGE   IP           NODE              NOMINATED NODE   READINESS GATES
+dex-5b9c467774-66f4m                           1/1     Running                    2 (12m ago)    54m   10.42.0.51   desktop-p7rd27m   <none>           <none>
+redis-74964f5fc4-nfnhb                         1/1     Running                    2 (12m ago)    54m   10.42.0.43   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-858b76f486-c8jwj   0/1     Running                    1 (114s ago)   10m   10.42.0.53   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-858b76f486-h7cc9   0/1     Running                    1 (114s ago)   10m   10.42.0.52   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-858b76f486-j2fmz   0/1     UnexpectedAdmissionError   0              11m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-858b76f486-tm278   0/1     UnexpectedAdmissionError   0              11m   <none>       desktop-p7rd27m   <none>           <none>
+memory.used [MiB], memory.total [MiB]
+7600 MiB, 8192 MiB
+== pod/ttalkkak-20261117-193453-c1-858b76f486-c8jwj
+(EngineCore pid=112) INFO 11-17 11:39:13 [model_runner.py:428] Model loading took 2.98 GiB memory and 17.782398 seconds
+(EngineCore pid=116) INFO 11-17 11:37:53 [gpu_worker.py:772] Available KV cache memory: -3.99 GiB
+(EngineCore pid=116) ERROR 11-17 11:37:53 [core.py:1584] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also cont
+ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite i
+== pod/ttalkkak-20261117-193453-c1-858b76f486-h7cc9
+(EngineCore pid=113) INFO 11-17 11:39:13 [model_runner.py:428] Model loading took 2.98 GiB memory and 17.718070 seconds
+(EngineCore pid=117) INFO 11-17 11:37:52 [gpu_worker.py:772] Available KV cache memory: -3.99 GiB
+(EngineCore pid=117) ERROR 11-17 11:37:52 [core.py:1584] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also cont
+ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite i
+== pod/ttalkkak-20261117-193453-c1-858b76f486-j2fmz
+== pod/ttalkkak-20261117-193453-c1-858b76f486-tm278

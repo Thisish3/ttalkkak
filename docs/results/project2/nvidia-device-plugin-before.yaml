@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    deprecated.daemonset.template.generation: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"DaemonSet","metadata":{"annotations":{},"name":"nvidia-device-plugin-daemonset","namespace":"kube-system"},"spec":{"selector":{"matchLabels":{"name":"nvidia-device-plugin-ds"}},"template":{"metadata":{"labels":{"name":"nvidia-device-plugin-ds"}},"spec":{"containers":[{"env":[{"name":"FAIL_ON_INIT_ERROR","value":"false"}],"image":"nvcr.io/nvidia/k8s-device-plugin:v0.17.0","name":"nvidia-device-plugin-ctr","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"mountPath":"/var/lib/kubelet/device-plugins","name":"device-plugin"}]}],"priorityClassName":"system-node-critical","tolerations":[{"effect":"NoSchedule","key":"nvidia.com/gpu","operator":"Exists"}],"volumes":[{"hostPath":{"path":"/var/lib/kubelet/device-plugins"},"name":"device-plugin"}]}},"updateStrategy":{"type":"RollingUpdate"}}}
+  creationTimestamp: "2026-10-15T08:03:38Z"
+  generation: 1
+  name: nvidia-device-plugin-daemonset
+  namespace: kube-system
+  resourceVersion: "18514"
+  uid: dfd31631-fb97-4d70-afc5-0c93477155c0
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: nvidia-device-plugin-ds
+  template:
+    metadata:
+      labels:
+        name: nvidia-device-plugin-ds
+    spec:
+      containers:
+      - env:
+        - name: FAIL_ON_INIT_ERROR
+          value: "false"
+        image: nvcr.io/nvidia/k8s-device-plugin:v0.17.0
+        imagePullPolicy: IfNotPresent
+        name: nvidia-device-plugin-ctr
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: device-plugin
+      dnsPolicy: ClusterFirst
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+          type: ""
+        name: device-plugin
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+status:
+  currentNumberScheduled: 1
+  desiredNumberScheduled: 1
+  numberAvailable: 1
+  numberMisscheduled: 0
+  numberReady: 1
+  observedGeneration: 1
+  updatedNumberScheduled: 1

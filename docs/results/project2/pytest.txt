@@ -1,0 +1,5 @@
+$ .venv/bin/python -m pytest -q
+ffbe435 Read ready replicas from the Deployment, not its scale subresource
+........................................................................ [ 99%]
+.                                                                        [100%]
+573 passed, 4 skipped in 18.67s

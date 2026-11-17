@@ -1,0 +1,316 @@
+# PATH에 .venv/bin 추가 (lm_eval을 찾게)
+$ .venv/bin/ttalkkak ops up --model Qwen/Qwen2.5-1.5B-Instruct --chip /home/a/.ttalkkak/nvidia-gpu-no-sglang.yaml --gpu-memory-utilization 0.8
+2026-11-17T19:34:52+09:00
+2026-11-17:19:36:23 WARNING  [config.evaluate_config:337] --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT.
+2026-11-17:19:36:23 INFO     [config.evaluate_config:357] Using default fewshot_as_multiturn=True.
+2026-11-17:19:36:34 INFO     [_cli.run:392] Selected Tasks: ['gsm8k']
+2026-11-17:19:36:37 INFO     [evaluator:214] Setting random seed to 1234 | Setting numpy seed to 1234 | Setting torch manual seed to 1234 | Setting fewshot manual seed to 1234
+2026-11-17:19:36:37 INFO     [evaluator:239] Initializing local-chat-completions model, with arguments: {'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'base_url': 'http://127.0.0.1:8000/v1/chat/completions', 'num_concurrent': 4, 'max_retries': 3, 'tokenized_requests': False}
+2026-11-17:19:36:37 INFO     [models.api_models:176] Using max length 2048 - 1
+2026-11-17:19:36:37 INFO     [models.api_models:197] Using tokenizer None
+Generating train split:   0%|          | 0/7473 [00:00<?, ? examples/s]Generating train split: 100%|██████████| 7473/7473 [00:00<00:00, 186701.65 examples/s]
+Generating test split:   0%|          | 0/1319 [00:00<?, ? examples/s]Generating test split: 100%|██████████| 1319/1319 [00:00<00:00, 357429.06 examples/s]
+2026-11-17:19:36:45 INFO     [evaluator_utils:472] Selected tasks:
+2026-11-17:19:36:45 INFO     [evaluator_utils:506] Task: gsm8k (gsm8k/gsm8k.yaml)
+2026-11-17:19:36:45 INFO     [evaluator:314] gsm8k: Using gen_kwargs: {'until': ['Question:', '</s>', '<|im_end|>'], 'do_sample': False, 'temperature': 0.0}
+2026-11-17:19:36:45 INFO     [api.task:312] Building contexts for gsm8k on rank 0...
+  0%|          | 0/100 [00:00<?, ?it/s] 28%|██▊       | 28/100 [00:00<00:00, 271.67it/s] 56%|█████▌    | 56/100 [00:00<00:00, 271.59it/s] 84%|████████▍ | 84/100 [00:00<00:00, 272.39it/s]100%|██████████| 100/100 [00:00<00:00, 272.18it/s]
+2026-11-17:19:36:45 INFO     [evaluator:589] Running generate_until requests
+2026-11-17:19:36:45 INFO     [models.api_models:752] Tokenized requests are disabled. Context + generation length is not checked.
+Requesting API:   0%|          | 0/100 [00:00<?, ?it/s]Requesting API:   1%|          | 1/100 [00:01<02:03,  1.24s/it]Requesting API:   2%|▏         | 2/100 [00:01<01:04,  1.52it/s]Requesting API:   3%|▎         | 3/100 [00:02<01:00,  1.61it/s]Requesting API:   4%|▍         | 4/100 [00:02<00:58,  1.63it/s]Requesting API:   5%|▌         | 5/100 [00:03<00:53,  1.78it/s]Requesting API:   6%|▌         | 6/100 [00:03<00:46,  2.00it/s]Requesting API:   7%|▋         | 7/100 [00:04<00:46,  2.00it/s]Requesting API:   8%|▊         | 8/100 [00:04<00:58,  1.58it/s]Requesting API:   9%|▉         | 9/100 [00:05<00:59,  1.53it/s]Requesting API:  10%|█         | 10/100 [00:05<00:46,  1.94it/s]Requesting API:  11%|█         | 11/100 [00:06<00:42,  2.08it/s]Requesting API:  12%|█▏        | 12/100 [00:06<00:39,  2.23it/s]Requesting API:  13%|█▎        | 13/100 [00:07<00:40,  2.15it/s]Requesting API:  14%|█▍        | 14/100 [00:07<00:44,  1.93it/s]Requesting API:  15%|█▌        | 15/100 [00:07<00:35,  2.42it/s]Requesting API:  16%|█▌        | 16/100 [00:08<00:43,  1.94it/s]Requesting API:  17%|█▋        | 17/100 [00:08<00:34,  2.43it/s]Requesting API:  18%|█▊        | 18/100 [00:08<00:27,  3.03it/s]Requesting API:  19%|█▉        | 19/100 [00:10<00:44,  1.81it/s]Requesting API:  20%|██        | 20/100 [00:10<00:38,  2.10it/s]Requesting API:  21%|██        | 21/100 [00:10<00:30,  2.57it/s]Requesting API:  23%|██▎       | 23/100 [00:11<00:26,  2.87it/s]Requesting API:  24%|██▍       | 24/100 [00:11<00:29,  2.55it/s]Requesting API:  26%|██▌       | 26/100 [00:12<00:24,  3.00it/s]Requesting API:  27%|██▋       | 27/100 [00:12<00:32,  2.26it/s]Requesting API:  28%|██▊       | 28/100 [00:13<00:26,  2.73it/s]Requesting API:  30%|███       | 30/100 [00:13<00:21,  3.20it/s]Requesting API:  31%|███       | 31/100 [00:14<00:26,  2.61it/s]Requesting API:  32%|███▏      | 32/100 [00:14<00:29,  2.27it/s]Requesting API:  33%|███▎      | 33/100 [00:15<00:31,  2.13it/s]Requesting API:  35%|███▌      | 35/100 [00:15<00:22,  2.86it/s]Requesting API:  36%|███▌      | 36/100 [00:16<00:24,  2.58it/s]Requesting API:  37%|███▋      | 37/100 [00:16<00:25,  2.51it/s]Requesting API:  38%|███▊      | 38/100 [00:16<00:21,  2.93it/s]Requesting API:  39%|███▉      | 39/100 [00:17<00:23,  2.56it/s]Requesting API:  40%|████      | 40/100 [00:18<00:27,  2.19it/s]Requesting API:  41%|████      | 41/100 [00:18<00:21,  2.70it/s]Requesting API:  42%|████▏     | 42/100 [00:18<00:18,  3.17it/s]Requesting API:  43%|████▎     | 43/100 [00:18<00:22,  2.48it/s]Requesting API:  44%|████▍     | 44/100 [00:19<00:30,  1.83it/s]Requesting API:  45%|████▌     | 45/100 [00:20<00:24,  2.25it/s]Requesting API:  46%|████▌     | 46/100 [00:20<00:28,  1.91it/s]Requesting API:  47%|████▋     | 47/100 [00:21<00:26,  1.98it/s]Requesting API:  48%|████▊     | 48/100 [00:21<00:20,  2.54it/s]Requesting API:  49%|████▉     | 49/100 [00:21<00:19,  2.57it/s]Requesting API:  50%|█████     | 50/100 [00:22<00:21,  2.30it/s]Requesting API:  51%|█████     | 51/100 [00:22<00:17,  2.84it/s]Requesting API:  52%|█████▏    | 52/100 [00:23<00:21,  2.28it/s]Requesting API:  53%|█████▎    | 53/100 [00:23<00:21,  2.14it/s]Requesting API:  54%|█████▍    | 54/100 [00:24<00:21,  2.17it/s]Requesting API:  55%|█████▌    | 55/100 [00:24<00:24,  1.80it/s]Requesting API:  56%|█████▌    | 56/100 [00:25<00:19,  2.30it/s]Requesting API:  58%|█████▊    | 58/100 [00:25<00:19,  2.18it/s]Requesting API:  59%|█████▉    | 59/100 [00:26<00:17,  2.32it/s]Requesting API:  60%|██████    | 60/100 [00:26<00:16,  2.44it/s]Requesting API:  61%|██████    | 61/100 [00:27<00:15,  2.58it/s]Requesting API:  62%|██████▏   | 62/100 [00:27<00:18,  2.09it/s]Requesting API:  63%|██████▎   | 63/100 [00:28<00:18,  1.98it/s]Requesting API:  64%|██████▍   | 64/100 [00:28<00:17,  2.01it/s]Requesting API:  65%|██████▌   | 65/100 [00:29<00:18,  1.92it/s]Requesting API:  67%|██████▋   | 67/100 [00:30<00:14,  2.25it/s]Requesting API:  68%|██████▊   | 68/100 [00:30<00:12,  2.62it/s]Requesting API:  69%|██████▉   | 69/100 [00:30<00:11,  2.68it/s]Requesting API:  70%|███████   | 70/100 [00:31<00:13,  2.27it/s]Requesting API:  71%|███████   | 71/100 [00:31<00:13,  2.18it/s]Requesting API:  73%|███████▎  | 73/100 [00:32<00:12,  2.18it/s]Requesting API:  74%|███████▍  | 74/100 [00:33<00:14,  1.86it/s]Requesting API:  75%|███████▌  | 75/100 [00:33<00:11,  2.14it/s]Requesting API:  76%|███████▌  | 76/100 [00:34<00:13,  1.79it/s]Requesting API:  77%|███████▋  | 77/100 [00:34<00:11,  2.06it/s]Requesting API:  78%|███████▊  | 78/100 [00:35<00:09,  2.37it/s]Requesting API:  79%|███████▉  | 79/100 [00:35<00:08,  2.35it/s]Requesting API:  80%|████████  | 80/100 [00:36<00:10,  1.93it/s]Requesting API:  81%|████████  | 81/100 [00:36<00:09,  1.94it/s]Requesting API:  82%|████████▏ | 82/100 [00:36<00:07,  2.42it/s]Requesting API:  83%|████████▎ | 83/100 [00:37<00:05,  2.91it/s]Requesting API:  84%|████████▍ | 84/100 [00:37<00:05,  2.76it/s]Requesting API:  85%|████████▌ | 85/100 [00:37<00:05,  2.57it/s]Requesting API:  86%|████████▌ | 86/100 [00:38<00:05,  2.66it/s]Requesting API:  87%|████████▋ | 87/100 [00:39<00:07,  1.73it/s]Requesting API:  88%|████████▊ | 88/100 [00:39<00:06,  1.73it/s]Requesting API:  89%|████████▉ | 89/100 [00:40<00:06,  1.76it/s]Requesting API:  90%|█████████ | 90/100 [00:40<00:04,  2.27it/s]Requesting API:  91%|█████████ | 91/100 [00:40<00:03,  2.51it/s]Requesting API:  93%|█████████▎| 93/100 [00:41<00:02,  2.73it/s]Requesting API:  94%|█████████▍| 94/100 [00:42<00:02,  2.38it/s]Requesting API:  95%|█████████▌| 95/100 [00:42<00:01,  2.66it/s]Requesting API:  96%|█████████▌| 96/100 [00:42<00:01,  3.10it/s]Requesting API:  97%|█████████▋| 97/100 [00:42<00:00,  3.31it/s]Requesting API:  98%|█████████▊| 98/100 [00:43<00:00,  2.68it/s]Requesting API:  99%|█████████▉| 99/100 [00:43<00:00,  3.28it/s]Requesting API: 100%|██████████| 100/100 [00:43<00:00,  3.93it/s]Requesting API: 100%|██████████| 100/100 [00:43<00:00,  2.29it/s]
+2026-11-17:19:37:31 INFO     [loggers.evaluation_tracker:247] Saving results aggregated
+local-chat-completions ({'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'base_url': 'http://127.0.0.1:8000/v1/chat/completions', 'num_concurrent': 4, 'max_retries': 3, 'tokenized_requests': False}), gen_kwargs: ({}), limit: 100.0, num_fewshot: None, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value|   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|----:|---|-----:|
+|gsm8k|      3|flexible-extract|     5|exact_match|↑  | 0.53|±  |0.0502|
+|     |       |strict-match    |     5|exact_match|↑  | 0.36|±  |0.0482|
+
+✔ OpenAIHTTPBackend backend validated with model Qwen/Qwen2.5-1.5B-Instruct
+  {'kind': 'openai_http', 'target': 'http://127.0.0.1:8000', 'model':           
+  'Qwen/Qwen2.5-1.5B-Instruct', 'request_format': '/v1/chat/completions',       
+  'api_key': None, 'api_routes': {'/health': 'health', '/v1/models':            
+  'v1/models', '/v1/completions': 'v1/completions', '/v1/chat/completions':     
+  'v1/chat/completions', '/v1/embeddings': 'v1/embeddings', '/v1/responses':    
+  'v1/responses', '/v1/audio/transcriptions': 'v1/audio/transcriptions',        
+  '/v1/audio/translations': 'v1/audio/translations', '/pooling': 'pooling'},    
+  'timeout': None, 'timeout_connect': 5.0, 'http2': True, 'follow_redirects':   
+  True, 'verify': False, 'validate_backend': True, 'stream': True, 'extras':    
+  None, 'max_tokens': None, 'server_history': False,                            
+  'tool_call_missing_behavior': 'error_stop', 'multiturn_reasoning': False}     
+✔ Tokenizer resolved, Using tokenizer 'Qwen/Qwen2.5-1.5B-Instruct' from 
+arguments
+  {'kind': 'hf_auto', 'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'load_kwargs': {}} 
+✔ 1 datasets resolved
+  [{'kind': 'synthetic_text', 'load_kwargs': {}, 'prompt_tokens': 256,          
+  'prompt_tokens_stdev': None, 'prompt_tokens_min': None, 'prompt_tokens_max':  
+  None, 'output_tokens': 128, 'output_tokens_stdev': None, 'output_tokens_min': 
+  None, 'output_tokens_max': None, 'first_prompt_tokens': None,                 
+  'first_prompt_tokens_stdev': None, 'first_prompt_tokens_min': None,           
+  'first_prompt_tokens_max': None, 'first_output_tokens': None,                 
+  'first_output_tokens_stdev': None, 'first_output_tokens_min': None,           
+  'first_output_tokens_max': None, 'delay': None, 'delay_stdev': None,          
+  'delay_min': None, 'delay_max': None, 'turns': 1, 'tool_call_turns': [],      
+  'tools': None, 'tool_response_tokens': None, 'tool_response_tokens_stdev':    
+  None, 'tool_response_tokens_min': None, 'tool_response_tokens_max': None,     
+  'server_tool_call_turns': [], 'branches': [], 'prefix_buckets': None}]        
+✔ 2 preprocessors resolved
+  [{'kind': 'generative_column_mapper', 'column_mappings': None}, {'kind':      
+  'encode_media', 'audio_kwargs': {}, 'image_kwargs': {}, 'video_kwargs': {}}]  
+✔ Finalizer resolved
+  {'kind': 'generative', 'tool_call_mode': 'client'}                            
+✔ Request loader resolved with inf unique requests
+  {'kind': 'pytorch', 'samples': -1, 'shuffle': False, 'num_workers': 1,        
+  'prefetch_factor': 4096}                                                      
+✔ SynchronousProfile profile resolved
+  {'kind': 'synchronous', 'rampup_duration': 0.0, 'warmup': {'percent': None,   
+  'value': None, 'mode': 'prefer_duration'}, 'cooldown': {'percent': None,      
+  'value': None, 'mode': 'prefer_duration'}}                                    
+✔ Output formats resolved
+  [{'kind': 'json', 'path':                                                     
+  '/home/a/ttalkkak/runs/20261117-193453/perf_c1.json'}]                        
+✔ Setup complete, starting benchmarks...
+
+
+
+26-11-17 19:37:42|INFO     |guidellm.benchmark.benchmarker:run:116 - Starting benchmark for strategy: synchronous
+26-11-17 19:37:42|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): started | elapsed=0.0s | successful=0 errored=0 incomplete=0 | requests/s=0.00 output_tokens/s=0.00
+26-11-17 19:37:52|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): active | elapsed=10.7s | successful=7 errored=0 incomplete=0 | requests/s=0.83 output_tokens/s=105.97
+26-11-17 19:38:03|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): active | elapsed=21.3s | successful=16 errored=0 incomplete=0 | requests/s=0.84 output_tokens/s=107.67
+26-11-17 19:38:08|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): compile | elapsed=26.4s | successful=16 errored=0 incomplete=0 | requests/s=0.84 output_tokens/s=107.67
+26-11-17 19:38:08|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): completed | elapsed=26.5s | successful=20 errored=0 incomplete=0 | requests/s=0.84 output_tokens/s=107.93
+26-11-17 19:38:08|INFO     |guidellm.benchmark.benchmarker:run:199 - All benchmarks finalized
+
+
+ℹ Run Summary Info
+|=============|==========|==========|======|======|======|======|=====|=====|========|=====|=====|========|=====|=====|
+| Benchmark   | Timings                              ||||| Requests       ||| Input Tokens     ||| Output Tokens    |||
+| Strategy    | Start    | End      | Dur  | Warm | Cool | Comp | Inc | Err | Comp   | Inc | Err | Comp   | Inc | Err |
+|             |          |          | Sec  | Sec  | Sec  | Tot  | Tot | Tot | Tot    | Tot | Tot | Tot    | Tot | Tot |
+|-------------|----------|----------|------|------|------|------|-----|-----|--------|-----|-----|--------|-----|-----|
+| synchronous | 19:37:44 | 19:38:07 | 23.7 | 0.0  | 0.0  | 20   | 0   | 0   | 5700.0 | 0.0 | 0.0 | 2560.0 | 0.0 | 0.0 |
+|=============|==========|==========|======|======|======|======|=====|=====|========|=====|=====|========|=====|=====|
+
+
+ℹ Text Metrics Statistics (Completed Requests)
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+| Benchmark   | Input Tokens               |||| Input Words                |||| Input Characters               ||||
+| Strategy    | Per Request  || Per Second   || Per Request  || Per Second   || Per Request    || Per Second     ||
+|             | Mdn   | p95   | Mdn   | Mean  | Mdn   | p95   | Mdn   | Mean  | Mdn    | p95    | Mdn    | Mean   |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|--------|--------|--------|--------|
+| synchronous | 285.0 | 285.0 | 242.9 | 255.6 | 213.0 | 215.0 | 181.6 | 190.8 | 1416.0 | 1462.0 | 1207.0 | 1273.3 |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+| Benchmark   | Output Tokens              |||| Output Words               |||| Output Characters              ||||
+| Strategy    | Per Request  || Per Second   || Per Request  || Per Second   || Per Request    || Per Second     ||
+|             | Mdn   | p95   | Mdn   | Mean  | Mdn   | p95   | Mdn   | Mean  | Mdn    | p95    | Mdn    | Mean   |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|--------|--------|--------|--------|
+| synchronous | 128.0 | 128.0 | 109.1 | 114.8 | 103.0 | 108.0 | 88.5  | 90.0  | 617.0  | 669.0  | 525.9  | 552.3  |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+
+
+ℹ Request Token Statistics (Completed Requests)
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|=========|========|
+| Benchmark   | Input Tok    || Output Tok   || Total Tok    || Stream Iter  || Output Tok      ||
+| Strategy    | Per Req      || Per Req      || Per Req      || Per Req      || Per Stream Iter ||
+|             | Mdn   | p95   | Mdn   | p95   | Mdn   | p95   | Mdn   | p95   | Mdn     | p95    |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|---------|--------|
+| synchronous | 285.0 | 285.0 | 128.0 | 128.0 | 413.0 | 413.0 | 131.0 | 131.0 | 1.0     | 1.1    |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|=========|========|
+
+
+ℹ Request Latency Statistics (Completed Requests)
+|=============|============|=====|======|=============|======|=======|=============|======|=======|======|=====|=====|======|=====|=====|
+| Benchmark   | Request Latency       ||| TTFT                     ||| TTFOT                    ||| ITL            ||| TPOT           |||
+| Strategy    | Sec                   ||| ms                       ||| ms                       ||| ms             ||| ms             |||
+|             | Mean       | Mdn | p95  | Mean        | Mdn  | p95   | Mean        | Mdn  | p95   | Mean | Mdn | p95 | Mean | Mdn | p95 |
+|-------------|------------|-----|------|-------------|------|-------|-------------|------|-------|------|-----|-----|------|-----|-----|
+| synchronous | 1.2 ± 0.03 | 1.2 | 1.2* | 66.4 ± 25.7 | 54.3 | 55.0* | 66.4 ± 25.7 | 54.3 | 55.0* | 8.8  | 8.8 | 8.8 | 9.2  | 9.1 | 9.2 |
+|=============|============|=====|======|=============|======|=======|=============|======|=======|======|=====|=====|======|=====|=====|
+* confidence interval unavailable at this sample size
+
+
+ℹ Server Throughput Statistics (All Requests)
+|=============|=======|======|=========|==============|===============|==============|
+| Benchmark   | Requests             ||| Input Tokens | Output Tokens | Total Tokens |
+| Strategy    | Concurrency || Per Sec | Per Sec      | Per Sec       | Per Sec      |
+|             | Mdn   | Mean | Mean                                               ||||
+|-------------|-------|------|---------|--------------|---------------|--------------|
+| synchronous | 1.0   | 1.0  | 0.8     | 240.3        | 107.9         | 348.2        |
+|=============|=======|======|=========|==============|===============|==============|
+
+
+
+✔ Benchmarking complete, generated 1 benchmark(s)
+…   json    : /home/a/ttalkkak/runs/20261117-193453/perf_c1.json
+2026-11-17:19:39:38 WARNING  [config.evaluate_config:337] --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT.
+2026-11-17:19:39:38 INFO     [config.evaluate_config:357] Using default fewshot_as_multiturn=True.
+2026-11-17:19:39:49 INFO     [_cli.run:392] Selected Tasks: ['gsm8k']
+2026-11-17:19:39:51 INFO     [evaluator:214] Setting random seed to 1234 | Setting numpy seed to 1234 | Setting torch manual seed to 1234 | Setting fewshot manual seed to 1234
+2026-11-17:19:39:51 INFO     [evaluator:239] Initializing local-chat-completions model, with arguments: {'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'base_url': 'http://127.0.0.1:8001/v1/chat/completions', 'num_concurrent': 4, 'max_retries': 3, 'tokenized_requests': False}
+2026-11-17:19:39:51 INFO     [models.api_models:176] Using max length 2048 - 1
+2026-11-17:19:39:51 INFO     [models.api_models:197] Using tokenizer None
+2026-11-17:19:39:54 INFO     [evaluator_utils:472] Selected tasks:
+2026-11-17:19:39:54 INFO     [evaluator_utils:506] Task: gsm8k (gsm8k/gsm8k.yaml)
+2026-11-17:19:39:54 INFO     [evaluator:314] gsm8k: Using gen_kwargs: {'until': ['Question:', '</s>', '<|im_end|>'], 'do_sample': False, 'temperature': 0.0}
+2026-11-17:19:39:54 INFO     [api.task:312] Building contexts for gsm8k on rank 0...
+  0%|          | 0/100 [00:00<?, ?it/s] 28%|██▊       | 28/100 [00:00<00:00, 271.94it/s] 56%|█████▌    | 56/100 [00:00<00:00, 274.25it/s] 84%|████████▍ | 84/100 [00:00<00:00, 274.77it/s]100%|██████████| 100/100 [00:00<00:00, 274.67it/s]
+2026-11-17:19:39:54 INFO     [evaluator:589] Running generate_until requests
+2026-11-17:19:39:54 INFO     [models.api_models:752] Tokenized requests are disabled. Context + generation length is not checked.
+Requesting API:   0%|          | 0/100 [00:00<?, ?it/s]Requesting API:   1%|          | 1/100 [00:01<01:44,  1.06s/it]Requesting API:   2%|▏         | 2/100 [00:01<00:54,  1.80it/s]Requesting API:   3%|▎         | 3/100 [00:01<00:51,  1.90it/s]Requesting API:   4%|▍         | 4/100 [00:01<00:35,  2.67it/s]Requesting API:   5%|▌         | 5/100 [00:02<00:45,  2.10it/s]Requesting API:   6%|▌         | 6/100 [00:03<00:54,  1.74it/s]Requesting API:   7%|▋         | 7/100 [00:04<01:00,  1.54it/s]Requesting API:   8%|▊         | 8/100 [00:04<00:55,  1.66it/s]Requesting API:   9%|▉         | 9/100 [00:04<00:46,  1.94it/s]Requesting API:  10%|█         | 10/100 [00:05<00:37,  2.42it/s]Requesting API:  11%|█         | 11/100 [00:06<00:54,  1.62it/s]Requesting API:  12%|█▏        | 12/100 [00:06<00:55,  1.58it/s]Requesting API:  13%|█▎        | 13/100 [00:07<00:53,  1.63it/s]Requesting API:  14%|█▍        | 14/100 [00:07<00:43,  1.98it/s]Requesting API:  15%|█▌        | 15/100 [00:08<00:40,  2.12it/s]Requesting API:  16%|█▌        | 16/100 [00:09<00:55,  1.52it/s]Requesting API:  17%|█▋        | 17/100 [00:09<00:43,  1.90it/s]Requesting API:  18%|█▊        | 18/100 [00:09<00:35,  2.30it/s]Requesting API:  19%|█▉        | 19/100 [00:09<00:33,  2.45it/s]Requesting API:  20%|██        | 20/100 [00:10<00:41,  1.94it/s]Requesting API:  21%|██        | 21/100 [00:11<00:36,  2.18it/s]Requesting API:  22%|██▏       | 22/100 [00:11<00:28,  2.76it/s]Requesting API:  23%|██▎       | 23/100 [00:11<00:26,  2.95it/s]Requesting API:  24%|██▍       | 24/100 [00:11<00:29,  2.58it/s]Requesting API:  25%|██▌       | 25/100 [00:12<00:30,  2.43it/s]Requesting API:  26%|██▌       | 26/100 [00:12<00:27,  2.70it/s]Requesting API:  27%|██▋       | 27/100 [00:13<00:34,  2.13it/s]Requesting API:  28%|██▊       | 28/100 [00:14<00:38,  1.88it/s]Requesting API:  29%|██▉       | 29/100 [00:14<00:31,  2.29it/s]Requesting API:  30%|███       | 30/100 [00:14<00:26,  2.67it/s]Requesting API:  31%|███       | 31/100 [00:15<00:40,  1.69it/s]Requesting API:  32%|███▏      | 32/100 [00:15<00:33,  2.04it/s]Requesting API:  33%|███▎      | 33/100 [00:16<00:33,  2.02it/s]Requesting API:  34%|███▍      | 34/100 [00:16<00:26,  2.46it/s]Requesting API:  35%|███▌      | 35/100 [00:17<00:30,  2.15it/s]Requesting API:  36%|███▌      | 36/100 [00:17<00:27,  2.30it/s]Requesting API:  37%|███▋      | 37/100 [00:18<00:28,  2.19it/s]Requesting API:  38%|███▊      | 38/100 [00:18<00:33,  1.87it/s]Requesting API:  39%|███▉      | 39/100 [00:18<00:26,  2.33it/s]Requesting API:  40%|████      | 40/100 [00:19<00:28,  2.13it/s]Requesting API:  41%|████      | 41/100 [00:19<00:24,  2.46it/s]Requesting API:  42%|████▏     | 42/100 [00:20<00:22,  2.55it/s]Requesting API:  43%|████▎     | 43/100 [00:20<00:24,  2.32it/s]Requesting API:  44%|████▍     | 44/100 [00:21<00:26,  2.10it/s]Requesting API:  45%|████▌     | 45/100 [00:22<00:35,  1.55it/s]Requesting API:  46%|████▌     | 46/100 [00:22<00:29,  1.80it/s]Requesting API:  47%|████▋     | 47/100 [00:23<00:27,  1.91it/s]Requesting API:  48%|████▊     | 48/100 [00:23<00:25,  2.02it/s]Requesting API:  49%|████▉     | 49/100 [00:23<00:22,  2.23it/s]Requesting API:  50%|█████     | 50/100 [00:23<00:17,  2.85it/s]Requesting API:  51%|█████     | 51/100 [00:24<00:14,  3.29it/s]Requesting API:  52%|█████▏    | 52/100 [00:24<00:21,  2.25it/s]Requesting API:  54%|█████▍    | 54/100 [00:25<00:15,  2.96it/s]Requesting API:  55%|█████▌    | 55/100 [00:25<00:17,  2.53it/s]Requesting API:  56%|█████▌    | 56/100 [00:27<00:25,  1.70it/s]Requesting API:  58%|█████▊    | 58/100 [00:27<00:19,  2.11it/s]Requesting API:  59%|█████▉    | 59/100 [00:27<00:16,  2.45it/s]Requesting API:  60%|██████    | 60/100 [00:28<00:15,  2.64it/s]Requesting API:  61%|██████    | 61/100 [00:28<00:14,  2.61it/s]Requesting API:  62%|██████▏   | 62/100 [00:29<00:17,  2.12it/s]Requesting API:  63%|██████▎   | 63/100 [00:29<00:14,  2.50it/s]Requesting API:  64%|██████▍   | 64/100 [00:30<00:21,  1.67it/s]Requesting API:  65%|██████▌   | 65/100 [00:30<00:16,  2.10it/s]Requesting API:  66%|██████▌   | 66/100 [00:31<00:15,  2.21it/s]Requesting API:  67%|██████▋   | 67/100 [00:31<00:11,  2.83it/s]Requesting API:  68%|██████▊   | 68/100 [00:32<00:16,  1.95it/s]Requesting API:  69%|██████▉   | 69/100 [00:32<00:13,  2.26it/s]Requesting API:  70%|███████   | 70/100 [00:33<00:15,  1.89it/s]Requesting API:  72%|███████▏  | 72/100 [00:33<00:11,  2.40it/s]Requesting API:  73%|███████▎  | 73/100 [00:34<00:10,  2.63it/s]Requesting API:  74%|███████▍  | 74/100 [00:34<00:12,  2.04it/s]Requesting API:  76%|███████▌  | 76/100 [00:35<00:08,  2.76it/s]Requesting API:  77%|███████▋  | 77/100 [00:36<00:10,  2.16it/s]Requesting API:  78%|███████▊  | 78/100 [00:36<00:08,  2.59it/s]Requesting API:  79%|███████▉  | 79/100 [00:36<00:10,  2.04it/s]Requesting API:  80%|████████  | 80/100 [00:37<00:07,  2.57it/s]Requesting API:  81%|████████  | 81/100 [00:37<00:08,  2.19it/s]Requesting API:  82%|████████▏ | 82/100 [00:38<00:07,  2.46it/s]Requesting API:  83%|████████▎ | 83/100 [00:38<00:06,  2.80it/s]Requesting API:  84%|████████▍ | 84/100 [00:38<00:05,  3.13it/s]Requesting API:  85%|████████▌ | 85/100 [00:38<00:04,  3.67it/s]Requesting API:  86%|████████▌ | 86/100 [00:39<00:06,  2.07it/s]Requesting API:  87%|████████▋ | 87/100 [00:39<00:05,  2.26it/s]Requesting API:  88%|████████▊ | 88/100 [00:40<00:04,  2.46it/s]Requesting API:  89%|████████▉ | 89/100 [00:40<00:04,  2.72it/s]Requesting API:  90%|█████████ | 90/100 [00:41<00:04,  2.31it/s]Requesting API:  91%|█████████ | 91/100 [00:41<00:03,  2.80it/s]Requesting API:  92%|█████████▏| 92/100 [00:42<00:04,  1.74it/s]Requesting API:  94%|█████████▍| 94/100 [00:43<00:02,  2.13it/s]Requesting API:  95%|█████████▌| 95/100 [00:43<00:02,  2.25it/s]Requesting API:  96%|█████████▌| 96/100 [00:43<00:01,  2.59it/s]Requesting API:  97%|█████████▋| 97/100 [00:44<00:01,  1.97it/s]Requesting API:  98%|█████████▊| 98/100 [00:44<00:00,  2.44it/s]Requesting API:  99%|█████████▉| 99/100 [00:44<00:00,  2.85it/s]Requesting API: 100%|██████████| 100/100 [00:45<00:00,  2.43it/s]Requesting API: 100%|██████████| 100/100 [00:45<00:00,  2.20it/s]
+2026-11-17:19:40:42 INFO     [loggers.evaluation_tracker:247] Saving results aggregated
+local-chat-completions ({'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'base_url': 'http://127.0.0.1:8001/v1/chat/completions', 'num_concurrent': 4, 'max_retries': 3, 'tokenized_requests': False}), gen_kwargs: ({}), limit: 100.0, num_fewshot: None, batch_size: 1
+|Tasks|Version|     Filter     |n-shot|  Metric   |   |Value|   |Stderr|
+|-----|------:|----------------|-----:|-----------|---|----:|---|-----:|
+|gsm8k|      3|flexible-extract|     5|exact_match|↑  | 0.04|±  |0.0197|
+|     |       |strict-match    |     5|exact_match|↑  | 0.02|±  |0.0141|
+
+✔ OpenAIHTTPBackend backend validated with model Qwen/Qwen2.5-1.5B-Instruct
+  {'kind': 'openai_http', 'target': 'http://127.0.0.1:8001', 'model':           
+  'Qwen/Qwen2.5-1.5B-Instruct', 'request_format': '/v1/chat/completions',       
+  'api_key': None, 'api_routes': {'/health': 'health', '/v1/models':            
+  'v1/models', '/v1/completions': 'v1/completions', '/v1/chat/completions':     
+  'v1/chat/completions', '/v1/embeddings': 'v1/embeddings', '/v1/responses':    
+  'v1/responses', '/v1/audio/transcriptions': 'v1/audio/transcriptions',        
+  '/v1/audio/translations': 'v1/audio/translations', '/pooling': 'pooling'},    
+  'timeout': None, 'timeout_connect': 5.0, 'http2': True, 'follow_redirects':   
+  True, 'verify': False, 'validate_backend': True, 'stream': True, 'extras':    
+  None, 'max_tokens': None, 'server_history': False,                            
+  'tool_call_missing_behavior': 'error_stop', 'multiturn_reasoning': False}     
+✔ Tokenizer resolved, Using tokenizer 'Qwen/Qwen2.5-1.5B-Instruct' from 
+arguments
+  {'kind': 'hf_auto', 'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'load_kwargs': {}} 
+✔ 1 datasets resolved
+  [{'kind': 'synthetic_text', 'load_kwargs': {}, 'prompt_tokens': 256,          
+  'prompt_tokens_stdev': None, 'prompt_tokens_min': None, 'prompt_tokens_max':  
+  None, 'output_tokens': 128, 'output_tokens_stdev': None, 'output_tokens_min': 
+  None, 'output_tokens_max': None, 'first_prompt_tokens': None,                 
+  'first_prompt_tokens_stdev': None, 'first_prompt_tokens_min': None,           
+  'first_prompt_tokens_max': None, 'first_output_tokens': None,                 
+  'first_output_tokens_stdev': None, 'first_output_tokens_min': None,           
+  'first_output_tokens_max': None, 'delay': None, 'delay_stdev': None,          
+  'delay_min': None, 'delay_max': None, 'turns': 1, 'tool_call_turns': [],      
+  'tools': None, 'tool_response_tokens': None, 'tool_response_tokens_stdev':    
+  None, 'tool_response_tokens_min': None, 'tool_response_tokens_max': None,     
+  'server_tool_call_turns': [], 'branches': [], 'prefix_buckets': None}]        
+✔ 2 preprocessors resolved
+  [{'kind': 'generative_column_mapper', 'column_mappings': None}, {'kind':      
+  'encode_media', 'audio_kwargs': {}, 'image_kwargs': {}, 'video_kwargs': {}}]  
+✔ Finalizer resolved
+  {'kind': 'generative', 'tool_call_mode': 'client'}                            
+✔ Request loader resolved with inf unique requests
+  {'kind': 'pytorch', 'samples': -1, 'shuffle': False, 'num_workers': 1,        
+  'prefetch_factor': 4096}                                                      
+✔ SynchronousProfile profile resolved
+  {'kind': 'synchronous', 'rampup_duration': 0.0, 'warmup': {'percent': None,   
+  'value': None, 'mode': 'prefer_duration'}, 'cooldown': {'percent': None,      
+  'value': None, 'mode': 'prefer_duration'}}                                    
+✔ Output formats resolved
+  [{'kind': 'json', 'path':                                                     
+  '/home/a/ttalkkak/runs/20261117-193453/perf_c2.json'}]                        
+✔ Setup complete, starting benchmarks...
+
+
+
+26-11-17 19:40:48|INFO     |guidellm.benchmark.benchmarker:run:116 - Starting benchmark for strategy: synchronous
+26-11-17 19:40:48|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): started | elapsed=0.0s | successful=0 errored=0 incomplete=0 | requests/s=0.00 output_tokens/s=0.00
+26-11-17 19:40:59|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): active | elapsed=10.8s | successful=7 errored=0 incomplete=0 | requests/s=0.82 output_tokens/s=104.48
+26-11-17 19:41:09|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): active | elapsed=21.5s | successful=15 errored=0 incomplete=0 | requests/s=0.83 output_tokens/s=106.37
+26-11-17 19:41:15|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): compile | elapsed=26.7s | successful=15 errored=0 incomplete=0 | requests/s=0.83 output_tokens/s=106.37
+26-11-17 19:41:15|INFO     |guidellm.benchmark.progress:_log_update:420 - Benchmark 1 (synchronous): completed | elapsed=26.7s | successful=20 errored=0 incomplete=0 | requests/s=0.83 output_tokens/s=106.75
+26-11-17 19:41:15|INFO     |guidellm.benchmark.benchmarker:run:199 - All benchmarks finalized
+
+
+ℹ Run Summary Info
+|=============|==========|==========|======|======|======|======|=====|=====|========|=====|=====|========|=====|=====|
+| Benchmark   | Timings                              ||||| Requests       ||| Input Tokens     ||| Output Tokens    |||
+| Strategy    | Start    | End      | Dur  | Warm | Cool | Comp | Inc | Err | Comp   | Inc | Err | Comp   | Inc | Err |
+|             |          |          | Sec  | Sec  | Sec  | Tot  | Tot | Tot | Tot    | Tot | Tot | Tot    | Tot | Tot |
+|-------------|----------|----------|------|------|------|------|-----|-----|--------|-----|-----|--------|-----|-----|
+| synchronous | 19:40:50 | 19:41:14 | 24.0 | 0.0  | 0.0  | 20   | 0   | 0   | 5700.0 | 0.0 | 0.0 | 2560.0 | 0.0 | 0.0 |
+|=============|==========|==========|======|======|======|======|=====|=====|========|=====|=====|========|=====|=====|
+
+
+ℹ Text Metrics Statistics (Completed Requests)
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+| Benchmark   | Input Tokens               |||| Input Words                |||| Input Characters               ||||
+| Strategy    | Per Request  || Per Second   || Per Request  || Per Second   || Per Request    || Per Second     ||
+|             | Mdn   | p95   | Mdn   | Mean  | Mdn   | p95   | Mdn   | Mean  | Mdn    | p95    | Mdn    | Mean   |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|--------|--------|--------|--------|
+| synchronous | 285.0 | 285.0 | 240.7 | 253.3 | 213.0 | 215.0 | 179.9 | 189.1 | 1416.0 | 1462.0 | 1196.8 | 1261.8 |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+| Benchmark   | Output Tokens              |||| Output Words               |||| Output Characters              ||||
+| Strategy    | Per Request  || Per Second   || Per Request  || Per Second   || Per Request    || Per Second     ||
+|             | Mdn   | p95   | Mdn   | Mean  | Mdn   | p95   | Mdn   | Mean  | Mdn    | p95    | Mdn    | Mean   |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|--------|--------|--------|--------|
+| synchronous | 128.0 | 128.0 | 108.1 | 113.8 | 102.0 | 108.0 | 86.0  | 88.4  | 592.0  | 722.0  | 499.1  | 528.1  |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|========|========|========|========|
+
+
+ℹ Request Token Statistics (Completed Requests)
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|=========|========|
+| Benchmark   | Input Tok    || Output Tok   || Total Tok    || Stream Iter  || Output Tok      ||
+| Strategy    | Per Req      || Per Req      || Per Req      || Per Req      || Per Stream Iter ||
+|             | Mdn   | p95   | Mdn   | p95   | Mdn   | p95   | Mdn   | p95   | Mdn     | p95    |
+|-------------|-------|-------|-------|-------|-------|-------|-------|-------|---------|--------|
+| synchronous | 285.0 | 285.0 | 128.0 | 128.0 | 413.0 | 413.0 | 131.0 | 131.0 | 1.0     | 1.0    |
+|=============|=======|=======|=======|=======|=======|=======|=======|=======|=========|========|
+
+
+ℹ Request Latency Statistics (Completed Requests)
+|=============|============|=====|======|=============|======|=======|=============|======|=======|======|=====|=====|======|=====|=====|
+| Benchmark   | Request Latency       ||| TTFT                     ||| TTFOT                    ||| ITL            ||| TPOT           |||
+| Strategy    | Sec                   ||| ms                       ||| ms                       ||| ms             ||| ms             |||
+|             | Mean       | Mdn | p95  | Mean        | Mdn  | p95   | Mean        | Mdn  | p95   | Mean | Mdn | p95 | Mean | Mdn | p95 |
+|-------------|------------|-----|------|-------------|------|-------|-------------|------|-------|------|-----|-----|------|-----|-----|
+| synchronous | 1.2 ± 0.03 | 1.2 | 1.2* | 70.2 ± 30.7 | 55.5 | 56.8* | 70.2 ± 30.7 | 55.5 | 56.8* | 8.9  | 8.9 | 8.9 | 9.3  | 9.2 | 9.2 |
+|=============|============|=====|======|=============|======|=======|=============|======|=======|======|=====|=====|======|=====|=====|
+* confidence interval unavailable at this sample size
+
+
+ℹ Server Throughput Statistics (All Requests)
+|=============|=======|======|=========|==============|===============|==============|
+| Benchmark   | Requests             ||| Input Tokens | Output Tokens | Total Tokens |
+| Strategy    | Concurrency || Per Sec | Per Sec      | Per Sec       | Per Sec      |
+|             | Mdn   | Mean | Mean                                               ||||
+|-------------|-------|------|---------|--------------|---------------|--------------|
+| synchronous | 1.0   | 1.0  | 0.8     | 237.7        | 106.8         | 344.4        |
+|=============|=======|======|=========|==============|===============|==============|
+
+
+
+✔ Benchmarking complete, generated 1 benchmark(s)
+…   json    : /home/a/ttalkkak/runs/20261117-193453/perf_c2.json
+# ttalkkak report
+
+**선택:** c1
+
+## 경고
+- 없음
+
+## 요구사항
+- 없음
+
+## 예측 vs 실측
+
+| 후보 | 엔진 | max_model_len | KV 토큰 예측 / 실측 | 출력 tok/s | TTFT ms | 정확도 |
+|---|---|---|---|---|---|---|
+| c1 | vllm | 32768 | 94543 / 86176 | 107.9 | 66.4 | 0.5 |
+| c2 | vllm | 32768 | 189086 / 146016 | 106.8 | 70.2 | 0.0 |
+| c3 | sglang | 32768 | 124502 / - | - | - | - |
+
+## 탈락·실패
+- c2: 정확도 하락 49.0%p (기준 0.53 → 0.04)
+- c3: 기동 실패 (bad_arg)
+```
+no image for sglang on nvidia
+```
+
+## 에이전트 검사
+
+## 연결
+```python
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(base_url="http://127.0.0.1:8000/v1", api_key="EMPTY", model="Qwen/Qwen2.5-1.5B-Instruct")
+```
+
+exit=0
+2026-11-17T19:42:45+09:00

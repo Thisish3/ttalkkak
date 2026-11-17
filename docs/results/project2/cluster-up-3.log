@@ -1,0 +1,2 @@
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 900
+2026-11-17T19:45:20+09:00

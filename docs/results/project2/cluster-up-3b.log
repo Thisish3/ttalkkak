@@ -1,0 +1,32 @@
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 900
+2026-11-17T20:03:26+09:00
+오류: ttalkkak-20261117-193453-c1이 900초 안에 준비되지 않았습니다
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  27m   deployment-controller  Scaled up replica set ttalkkak-20261117-193453-c1-6db678d779 from 0 to 3
+exit=1
+2026-11-17T20:13:14+09:00
+$ .venv/bin/ttalkkak ops cluster status
+파드                                              준비     재시작  상태
+dex-5b9c467774-66f4m                           1/1       1  Running
+redis-74964f5fc4-nfnhb                         1/1       1  Running
+ttalkkak-20261117-193453-c1-6db678d779-2cz4r   0/1       0  Failed
+ttalkkak-20261117-193453-c1-6db678d779-2scs4   0/1       0  Failed
+ttalkkak-20261117-193453-c1-6db678d779-5dxjn   0/1       0  Running
+ttalkkak-20261117-193453-c1-6db678d779-g4sl2   0/1       0  Running
+ttalkkak-20261117-193453-c1-6db678d779-rs4wt   0/1       0  Failed
+ttalkkak-20261117-193453-c1-6db678d779-zgfj8   0/1       0  Running
+$ kubectl get pods -n ttalkkak -o wide
+NAME                                           READY   STATUS    RESTARTS      AGE   IP           NODE              NOMINATED NODE   READINESS GATES
+dex-5b9c467774-66f4m                           1/1     Running   1 (10m ago)   27m   10.42.0.36   desktop-p7rd27m   <none>           <none>
+redis-74964f5fc4-nfnhb                         1/1     Running   1 (10m ago)   27m   10.42.0.35   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-2cz4r   0/1     Unknown   0             27m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-2scs4   0/1     Unknown   0             27m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-5dxjn   0/1     Running   0             10m   10.42.0.42   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-g4sl2   0/1     Running   0             10m   10.42.0.40   desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-rs4wt   0/1     Unknown   0             27m   <none>       desktop-p7rd27m   <none>           <none>
+ttalkkak-20261117-193453-c1-6db678d779-zgfj8   0/1     Running   0             10m   10.42.0.41   desktop-p7rd27m   <none>           <none>
+$ nvidia-smi
+memory.used [MiB], memory.total [MiB]
+7836 MiB, 8192 MiB

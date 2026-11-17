@@ -1,0 +1,19 @@
+# 부하 시험 r1 (복제본 1, probe_seconds=기본 30)
+2026-11-17T22:48:32+09:00
+$ POST /api/autoscale {"enabled": false}
+{"ok":true,"enabled":false}
+false
+$ kubectl scale deployment/ttalkkak-20261117-214304-c1 -n ttalkkak --replicas=1
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out
+ttalkkak-20261117-214304-c1-7749b7958d-8h6r9   1/1   Terminating   0     15m
+ttalkkak-20261117-214304-c1-7749b7958d-ljxgv   1/1   Running       0     15m
+$ POST /api/loadtest {"max_users": 20, "autoscale_on": false}
+{"id":"20261117-134854"}
+id=20261117-134854
+22:48:54 search 
+22:49:14 search error
+2026-11-17T22:49:14+09:00
+$ kubectl get configmap ttalkkak-capacity -n ttalkkak -o jsonpath='{.data.capacity\.json}'
+{}
+copied runs/loadtests/20261117-134854.json

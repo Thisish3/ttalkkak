@@ -1,0 +1,25 @@
+$ helm upgrade -i eg oci://docker.io/envoyproxy/gateway-helm --version v1.10.0 -n envoy-gateway-system -f docs/results/project2/envoy-gateway-values.yaml
+2026-11-17T22:40:51+09:00
+  $ helm get all eg -n envoy-gateway-system
+
+To have a quickstart of Envoy Gateway, please refer to https://gateway.envoyproxy.io/latest/tasks/quickstart.
+
+To get more details, please visit https://gateway.envoyproxy.io and https://github.com/envoyproxy/gateway.
+deployment "envoy-gateway" successfully rolled out
+(위에 줄이 없으면 500 직접 응답 설정이 없다)
+envoy-gateway-fcd656f6-zf4qc                        1/1   Running   6 (58m ago)    5d23h
+envoy-ratelimit-754ccc84d9-d8slk                    1/1   Running   31 (58m ago)   5d23h
+envoy-ttalkkak-ttalkkak-d856e626-5c9c67b974-78gn8   3/3   Running   0              6m18s
+
+$ kubectl rollout restart deployment/envoy-gateway -n envoy-gateway-system
+deployment.apps/envoy-gateway restarted
+Waiting for deployment "envoy-gateway" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "envoy-gateway" rollout to finish: 1 old replicas are pending termination...
+deployment "envoy-gateway" successfully rolled out
+  enableLua: true
+  backendResources:
+    kind: InferencePool
+(위에 오류 줄이 없으면 정상)
+envoy-gateway-64c464547f-c5m4t                      1/1   Running   0              48s
+envoy-ratelimit-754ccc84d9-d8slk                    1/1   Running   31 (59m ago)   5d23h
+envoy-ttalkkak-ttalkkak-d856e626-5c9c67b974-78gn8   3/3   Running   0              7m13s

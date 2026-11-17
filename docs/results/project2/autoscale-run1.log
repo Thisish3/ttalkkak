@@ -1,0 +1,43 @@
+# 9절 자동 증감 1 -> 2 -> 1
+2026-11-18T00:42:17+09:00
+$ kubectl scale deployment/ttalkkak-20261117-214304-c1 -n ttalkkak --replicas=1
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+ttalkkak-20261117-214304-c1-7749b7958d-jchlv       1/1   Running   0             16m
+$ POST /api/autoscale {"enabled": true}
+{"ok":true,"enabled":true}
+{"deployment":"ttalkkak-20261117-214304-c1","enabled":"true","max_replicas":"2"}
+start state: 2026-11-18T00:42:23+09:00 replicas=1 gpu=3804 MiB
+$ POST /api/loadtest {"max_users": 20, "autoscale_on": true}
+id=20261117-154323 2026-11-18T00:43:23+09:00
+00:43:23 search  
+00:43:33 search  
+00:43:43 search 1 
+00:43:53 search 1 
+00:44:03 search 1 
+00:44:13 search 2 
+00:44:23 search 2 
+00:44:33 search 2 
+00:44:43 search 2 
+00:44:53 search 4 
+00:45:03 search 4 
+00:45:14 search 4 
+00:45:24 search 8 
+00:45:34 search 8 
+00:45:44 search 8 
+00:45:54 search 16 
+00:46:04 search 16 
+00:46:14 search 16 
+00:46:24 search 16 
+00:46:34 search 20 
+00:46:44 search 20 
+00:46:54 search 20 
+00:47:04 confirm  
+00:47:14 confirm  
+00:47:24 confirm  
+00:47:34 confirm  
+00:47:44 confirm  
+00:47:54 confirm  
+00:48:04 confirm  
+00:48:14 confirm  
+00:48:24 done  
+test end: 2026-11-18T00:48:24+09:00

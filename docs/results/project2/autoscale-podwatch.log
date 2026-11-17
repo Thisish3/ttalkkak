@@ -1,0 +1,13 @@
+01:30:35.603 ADDED      ttalkkak-20261117-214304-c1-7749b7958d-jchlv       1/1     Running   0              64m
+01:36:11.247 ADDED      ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Pending   0              0s
+01:36:11.276 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Pending   0              0s
+01:36:11.314 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     ContainerCreating   0              0s
+01:36:12.058 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     ContainerCreating   0              1s
+01:36:12.782 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Running             0              1s
+01:37:18.227 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Running             0              67s
+01:37:58.232 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       1/1     Running             0              107s
+01:41:21.224 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       1/1     Terminating         0              5m10s
+01:41:21.240 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       1/1     Terminating         0              5m10s
+01:41:22.994 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Completed           0              5m11s
+01:41:23.354 MODIFIED   ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Completed           0              5m12s
+01:41:23.375 DELETED    ttalkkak-20261117-214304-c1-7749b7958d-f6g7m       0/1     Completed           0              5m12s

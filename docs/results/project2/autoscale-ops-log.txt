@@ -1,0 +1,10 @@
+AUTOSCALE {"t":"2026-11-17T16:08:51.144732Z","action":"hold","from_replicas":1,"to_replicas":1,"reason":"조건 없음"}
+AUTOSCALE {"t":"2026-11-17T16:26:51.163296Z","action":"hold","from_replicas":1,"to_replicas":1,"reason":"줄이려 했으나 최소 복제본 1개"}
+AUTOSCALE {"t":"2026-11-17T16:33:11.169809Z","action":"hold","from_replicas":1,"to_replicas":1,"reason":"조건 없음"}
+AUTOSCALE {"t":"2026-11-17T16:36:11.172809Z","action":"up","from_replicas":1,"to_replicas":2,"reason":"용량 사용률 110.014 %가 2분 넘게 계속"}
+AUTOSCALE {"t":"2026-11-17T16:36:21.172971Z","action":"hold","from_replicas":2,"to_replicas":2,"reason":"새 복제본 준비 중 (준비 1/2)"}
+AUTOSCALE {"t":"2026-11-17T16:38:01.174566Z","action":"hold","from_replicas":2,"to_replicas":2,"reason":"늘린 뒤 쿨다운 중 (110초 지남, 300초까지 변경 안 함)"}
+AUTOSCALE {"t":"2026-11-17T16:38:01.174566Z","action":"ready","from_replicas":2,"to_replicas":2,"reason":"새 복제본 준비 완료 (복제본 2개)","ready_after_s":110}
+AUTOSCALE {"t":"2026-11-17T16:41:11.177862Z","action":"hold","from_replicas":2,"to_replicas":2,"reason":"조건 없음"}
+AUTOSCALE {"t":"2026-11-17T16:41:21.178002Z","action":"down","from_replicas":2,"to_replicas":1,"reason":"놀고 있는 복제본 1개, 줄이면 예상 용량 사용률 0 % (기준 60 % 이하)"}
+AUTOSCALE {"t":"2026-11-17T16:41:31.178165Z","action":"hold","from_replicas":1,"to_replicas":1,"reason":"줄인 뒤 쿨다운 중 (10초 지남, 600초까지 변경 안 함)"}

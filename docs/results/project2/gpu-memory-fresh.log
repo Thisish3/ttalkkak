@@ -1,0 +1,13 @@
+# GPU 메모리: 복제본 0개 → 새로 2개 (R25)
+2026-11-18T00:25:46+09:00
+before (vvjwb + nj968 idle): 7985 MiB
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+0 replicas: 269 MiB
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+1 replica (new): 3476 MiB
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+2 replicas (new): 6688 MiB
+ttalkkak-20261117-214304-c1-7749b7958d-jchlv       1/1   Running   0             3m37s
+ttalkkak-20261117-214304-c1-7749b7958d-xd4vt       1/1   Running   0             106s
+2026-11-18T00:29:45+09:00
+after test: 7262 MiB

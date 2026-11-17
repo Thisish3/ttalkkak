@@ -1,0 +1,15 @@
+$ .venv/bin/ttalkkak ops export --run 20261117-193453 --target gateway --out deploy/ --replicas 3 --max-replicas 3 --autoscale --gpu-share resource --hostname ttalkkak.local
+deploy/00-namespace.yaml
+deploy/10-redis.yaml
+deploy/15-dex.yaml
+deploy/20-vllm.yaml
+deploy/25-ops-serve.yaml
+deploy/30-llmd.yaml
+deploy/40-gateway.yaml
+deploy/50-observability.yaml
+deploy/README.md
+deploy/alerts.yaml
+deploy/grafana/gpu.json
+deploy/grafana/serving.json
+deploy/grafana/usage.json
+exit=0

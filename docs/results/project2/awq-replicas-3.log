@@ -1,0 +1,32 @@
+# AWQ 복제본 3개
+$ .venv/bin/ttalkkak ops export --run 20261117-214304 --target gateway --out deploy/ --replicas 3 --max-replicas 3 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+exit=0
+        - --gpu-memory-utilization
+        - '0.28'
+$ kubectl apply -f deploy/20-vllm.yaml
+deployment.apps/ttalkkak-20261117-214304-c1 configured
+service/ttalkkak-20261117-214304-c1 unchanged
+configmap/ttalkkak-autoscale configured
+configmap/ttalkkak-capacity unchanged
+2026-11-17T22:09:55+09:00
+Waiting for deployment "ttalkkak-20261117-214304-c1" rollout to finish: 0 of 3 updated replicas are available...
+error: timed out waiting for the condition
+rollout exit=1 elapsed=600s
+NAME                                           READY   STATUS    RESTARTS      AGE
+ttalkkak-20261117-214304-c1-6b89b99c8d-8k7vc   0/1     Running   4 (63s ago)   10m
+ttalkkak-20261117-214304-c1-6b89b99c8d-95vnn   0/1     Running   4 (63s ago)   10m
+ttalkkak-20261117-214304-c1-6b89b99c8d-lwhwt   0/1     Running   4 (64s ago)   10m
+266 MiB
+== pod/ttalkkak-20261117-214304-c1-6b89b99c8d-8k7vc
+(EngineCore pid=144) INFO 11-17 13:18:45 [gpu_worker.py:772] Available KV cache memory: -0.42 GiB
+(EngineCore pid=144) ERROR 11-17 13:18:45 [core.py:1584] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also cont
+ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite i
+== pod/ttalkkak-20261117-214304-c1-6b89b99c8d-95vnn
+(EngineCore pid=144) INFO 11-17 13:18:45 [gpu_worker.py:772] Available KV cache memory: -3.55 GiB
+(EngineCore pid=144) ERROR 11-17 13:18:45 [core.py:1584] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also cont
+ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite i
+== pod/ttalkkak-20261117-214304-c1-6b89b99c8d-lwhwt
+(EngineCore pid=143) INFO 11-17 13:18:46 [gpu_worker.py:772] Available KV cache memory: -3.55 GiB
+(EngineCore pid=143) ERROR 11-17 13:18:46 [core.py:1584] ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also cont
+ValueError: No available memory for the cache blocks. Try increasing `gpu_memory_utilization` when initializing the engine (this flag also controls CPU memory reservation on the CPU backend, despite i
+deployment.apps/ttalkkak-20261117-214304-c1 scaled

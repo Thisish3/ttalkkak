@@ -1,0 +1,10 @@
+# AWQ 복제본 1개 (세 번째 시도, kubectl scale --replicas=1, 약 150초 뒤 확인)
+NAME                                           READY   STATUS    RESTARTS   AGE
+ttalkkak-20261117-214304-c1-56bb84ccbc-5vmgg   1/1     Running   0          2m38s
+6998 MiB
+(EngineCore pid=143) INFO 11-17 13:23:38 [model_runner.py:428] Model loading took 1.1 GiB memory and 9.293373 seconds
+(EngineCore pid=143) INFO 11-17 13:24:07 [model_runner.py:1163] Graph capturing finished in 5 secs, took 0.32 GiB
+(EngineCore pid=143) INFO 11-17 13:24:08 [gpu_worker.py:772] Available KV cache memory: 4.6 GiB
+(EngineCore pid=143) INFO 11-17 13:24:08 [kv_cache_utils.py:1147] GPU KV cache size: 172,176 tokens, Maximum concurrency for 32,768 tokens per request: 5.25x
+(EngineCore pid=143) INFO 11-17 13:24:15 [model_runner.py:1163] Graph capturing finished in 6 secs, took 0.20 GiB
+INFO:     Application startup complete.

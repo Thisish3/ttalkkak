@@ -1,0 +1,31 @@
+$ kubectl create namespace ttalkkak
+namespace/ttalkkak created
+$ kubectl -n ttalkkak create secret tls ttalkkak-tls --cert=~/.ttalkkak/tls/tls.crt --key=~/.ttalkkak/tls/tls.key
+secret/ttalkkak-tls created
+$ kubectl -n ttalkkak create secret generic grafana-admin --from-file=password=~/.ttalkkak/grafana-admin
+secret/grafana-admin created
+$ kubectl -n ttalkkak create secret generic hf-token --from-literal=HF_TOKEN=  (공개 모델이라 빈 값)
+secret/hf-token created
+$ docker build -t ttalkkak:local .
+2026-11-17T19:44:15+09:00
+sha256:b1cd8d8c517e83196ddedfff1b1b09c33e40b515e9f1a98518572d47f25ebc9f
+build exit=0
+save exit=0
+-rw------- 1 a a 104913408 Nov 17 19:44 /tmp/ttalkkak-local.tar
+docker.io/library/ttalkkak:local        	saved	
+application/vnd.oci.image.index.v1+json sha256:b1cd8d8c517e83196ddedfff1b1b09c33e40b515e9f1a98518572d47f25ebc9f
+Importing	elapsed: 5.1 s	total:   0.0 B	(0.0 B/s)	
+import exit=0
+docker.io/library/ttalkkak                   local               22440ab32c370       105MB
+# R11 수정 반영 재빌드 (c434ece)
+$ docker build -t ttalkkak:local .
+2026-11-17T21:14:40+09:00
+sha256:2a2b3a4b1cfc7239a109da62ad223791df875be81af7756c28920ad2f010c240
+build exit=0
+save exit=0
+# R26 수정 반영 재빌드 (ffbe435)
+$ docker build -t ttalkkak:local .
+2026-11-18T01:06:01+09:00
+sha256:c0e896111d91b9d1a4710c369422aec1f44a417ea48f549090c0de37ae97240a
+build exit=0
+save exit=0

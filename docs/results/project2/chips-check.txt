@@ -1,0 +1,6 @@
+$ .venv/bin/python -c "load_chip(each src/ttalkkak/data/chips/*.yaml)"
+amd-gpu.yaml OK amd-gpu ['sglang', 'vllm']
+example-npu.yaml OK example-npu ['vllm']
+nvidia-gpu.yaml OK nvidia-gpu ['sglang', 'vllm']
+$ .venv/bin/python -m pytest -q -k chip
+32 passed, 545 deselected in 3.00s

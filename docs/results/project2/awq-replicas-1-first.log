@@ -1,0 +1,21 @@
+# AWQ 복제본 1개
+$ .venv/bin/ttalkkak ops export --run 20261117-214304 --target gateway --out deploy/ --replicas 1 --max-replicas 1 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+exit=0
+        - --gpu-memory-utilization
+        - '0.85'
+$ kubectl apply -f deploy/20-vllm.yaml
+deployment.apps/ttalkkak-20261117-214304-c1 created
+service/ttalkkak-20261117-214304-c1 created
+Warning: resource configmaps/ttalkkak-autoscale is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+configmap/ttalkkak-autoscale configured
+Warning: resource configmaps/ttalkkak-capacity is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+configmap/ttalkkak-capacity configured
+2026-11-17T21:54:40+09:00
+Waiting for deployment "ttalkkak-20261117-214304-c1" rollout to finish: 0 of 1 updated replicas are available...
+error: deployment "ttalkkak-20261117-214304-c1" exceeded its progress deadline
+rollout exit=1 elapsed=600s
+NAME                                           READY   STATUS    RESTARTS   AGE
+ttalkkak-20261117-214304-c1-56bb84ccbc-sn7cb   0/1     Running   0          10m
+2189 MiB
+== pod/ttalkkak-20261117-214304-c1-56bb84ccbc-sn7cb
+deployment.apps/ttalkkak-20261117-214304-c1 scaled

@@ -1,0 +1,26 @@
+deployment.apps/ttalkkak-20261117-193453-c1 scaled
+$ .venv/bin/ttalkkak ops export --run 20261117-193453 --target gateway --out deploy/ --replicas 1 --max-replicas 1 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+exit=0
+        - --gpu-memory-utilization
+        - '0.85'
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 900
+2026-11-17T21:01:15+09:00
+오류: ttalkkak-ops이 900초 안에 준비되지 않았습니다
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  10m   deployment-controller  Scaled up replica set ttalkkak-ops-77dfd5f796 from 0 to 1
+exit=1 elapsed=690s
+2026-11-17T21:12:45+09:00
+$ .venv/bin/ttalkkak ops cluster status
+파드                                              준비     재시작  상태
+dex-5b9c467774-66f4m                           1/1       2  Running
+redis-74964f5fc4-nfnhb                         1/1       2  Running
+ttalkkak-20261117-193453-c1-5fbd4bb6b9-k9dnx   1/1       0  Running
+ttalkkak-ops-77dfd5f796-6lpnv                  0/1       6  Running
+== pod/ttalkkak-20261117-193453-c1-5fbd4bb6b9-k9dnx
+(EngineCore pid=112) INFO 11-17 12:01:58 [model_runner.py:428] Model loading took 2.98 GiB memory and 5.116329 seconds
+(EngineCore pid=112) INFO 11-17 12:02:24 [gpu_worker.py:772] Available KV cache memory: 2.7 GiB
+(EngineCore pid=112) INFO 11-17 12:02:24 [kv_cache_utils.py:1147] GPU KV cache size: 101,152 tokens, Maximum concurrency for 32,768 tokens per request: 3.09x
+INFO:     Application startup complete.
+7033 MiB

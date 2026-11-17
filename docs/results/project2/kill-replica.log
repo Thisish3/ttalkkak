@@ -1,0 +1,79 @@
+# 8절: 시험 중 복제본 하나 끄기
+2026-11-17T23:26:04+09:00
+{"ok":true,"enabled":false}
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out
+ttalkkak-20261117-214304-c1-7749b7958d-fm894       0/1   Unknown   0             21m
+ttalkkak-20261117-214304-c1-7749b7958d-ljxgv       0/1   Unknown   0             52m
+ttalkkak-20261117-214304-c1-7749b7958d-tg28c       1/1   Running   0             13m
+ttalkkak-20261117-214304-c1-7749b7958d-vvjwb       1/1   Running   0             13m
+$ POST /api/loadtest {"max_users": 20, "autoscale_on": false}
+id=20261117-142605
+23:26:05 search 0  
+23:26:10 search 0  
+23:26:15 search 0  
+23:26:20 search 0  
+23:26:25 search 0  
+23:26:30 search 0  
+23:26:35 search 0  
+23:26:40 search 0  
+23:26:45 search 1 1 
+23:26:50 search 1 1 
+23:26:55 search 1 1 
+23:27:00 search 1 1 
+23:27:05 search 1 1 
+23:27:10 search 1 1 
+23:27:15 search 2 2 
+23:27:20 search 2 2 
+23:27:25 search 2 2 
+23:27:30 search 2 2 
+23:27:35 search 2 2 
+23:27:40 search 2 2 
+23:27:46 search 2 2 
+23:27:51 search 3 4 
+23:27:51.213 KILL ttalkkak-20261117-214304-c1-7749b7958d-tg28c via POST /api/replicas/ttalkkak-20261117-214304-c1-7749b7958d-tg28c/delete (탐색 3번째 단계, 4명)
+{"ok":true}
+23:27:59 search 3 4 
+23:28:04 search 3 4 
+23:28:09 search 3 4 
+23:28:14 search 3 4 
+23:28:19 search 3 4 
+23:28:24 search 4 8 
+23:28:29 search 4 8 
+23:28:34 search 4 8 
+23:28:39 search 4 8 
+23:28:45 search 4 8 
+23:28:50 search 4 8 
+23:28:55 search 4 8 
+23:29:00 search 5 16 
+23:29:05 search 5 16 
+23:29:10 search 5 16 
+23:29:15 search 5 16 
+23:29:20 search 5 16 
+23:29:25 search 5 16 
+23:29:30 search 6 20 
+23:29:35 search 6 20 
+23:29:40 search 6 20 
+23:29:45 search 6 20 
+23:29:50 search 6 20 
+23:29:55 search 6 20 
+23:30:00 search 6 20 
+23:30:05 confirm 0  
+23:30:10 confirm 0  
+23:30:15 confirm 0  
+23:30:20 confirm 0  
+23:30:26 confirm 0  
+23:30:31 confirm 0  
+23:30:36 confirm 0  
+23:30:41 confirm 0  
+23:30:46 confirm 0  
+23:30:51 confirm 0  
+23:30:56 confirm 0  
+23:31:01 confirm 0  
+23:31:06 confirm 0  
+23:31:11 confirm 0  
+23:31:16 confirm 0  
+23:31:21 done 0  
+2026-11-17T23:31:21+09:00
+copied runs/loadtests/20261117-142605.json
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out

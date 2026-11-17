@@ -1,0 +1,56 @@
+$ .venv/bin/ttalkkak ops up --model Qwen/Qwen2.5-1.5B-Instruct --chip /home/a/.ttalkkak/nvidia-gpu-no-sglang.yaml --gpu-memory-utilization 0.8
+2026-11-17T16:50:30+09:00
+# ttalkkak report
+
+**선택:** 없음 (모든 후보 탈락)
+
+## 경고
+- 없음
+
+## 요구사항
+- 없음
+
+## 예측 vs 실측
+
+| 후보 | 엔진 | max_model_len | KV 토큰 예측 / 실측 | 출력 tok/s | TTFT ms | 정확도 |
+|---|---|---|---|---|---|---|
+| c1 | vllm | 32768 | 94543 / - | - | - | - |
+| c2 | vllm | 32768 | 189086 / - | - | - | - |
+| c3 | sglang | 32768 | 124502 / - | - | - | - |
+
+## 탈락·실패
+- c1: 기동 실패 (oom)
+```
+    super().__init__(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py", line 699, in __init__
+    with launch_core_engines(
+  File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 1393, in launch_core_engines
+    wait_for_engine_startup(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 1473, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+```
+- c2: 기동 실패 (oom)
+```
+    super().__init__(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/core_client.py", line 699, in __init__
+    with launch_core_engines(
+  File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 1393, in launch_core_engines
+    wait_for_engine_startup(
+  File "/usr/local/lib/python3.12/dist-packages/vllm/v1/engine/utils.py", line 1473, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+```
+- c3: 기동 실패 (bad_arg)
+```
+no image for sglang on nvidia
+```
+
+## 에이전트 검사
+
+exit=1
+2026-11-17T16:52:17+09:00

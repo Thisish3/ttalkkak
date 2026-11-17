@@ -1,0 +1,160 @@
+# 6.2 한도 429 시험 (acme, 원래 한도: 없음 '-')
+2026-11-17T22:39:03+09:00
+$ .venv/bin/ttalkkak ops tenants set-limit acme 200
+acme 분당 토큰 한도: 200
+$ .venv/bin/ttalkkak ops tenants key-issue acme > ~/.ttalkkak/acme-429.key  (출력은 파일로만)
+$ ops export ... --force; kubectl apply -f deploy/00-namespace.yaml -f deploy/25-ops-serve.yaml -f deploy/40-gateway.yaml
+Warning: resource namespaces/ttalkkak is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+namespace/ttalkkak configured
+Warning: resource secrets/ttalkkak-tenants is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+secret/ttalkkak-tenants configured
+Warning: resource serviceaccounts/ttalkkak-ops is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+serviceaccount/ttalkkak-ops configured
+Warning: resource roles/ttalkkak-envoy-log-reader is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+role.rbac.authorization.k8s.io/ttalkkak-envoy-log-reader configured
+Warning: resource rolebindings/ttalkkak-envoy-log-reader is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+rolebinding.rbac.authorization.k8s.io/ttalkkak-envoy-log-reader configured
+Warning: resource roles/ttalkkak-ops-autoscale is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+role.rbac.authorization.k8s.io/ttalkkak-ops-autoscale configured
+Warning: resource rolebindings/ttalkkak-ops-autoscale is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+rolebinding.rbac.authorization.k8s.io/ttalkkak-ops-autoscale configured
+Warning: resource configmaps/ttalkkak-cost is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+configmap/ttalkkak-cost configured
+Warning: resource deployments/ttalkkak-ops is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+deployment.apps/ttalkkak-ops configured
+Warning: resource services/ttalkkak-ops is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+service/ttalkkak-ops configured
+Warning: resource networkpolicies/ttalkkak-ops-ingress is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+networkpolicy.networking.k8s.io/ttalkkak-ops-ingress configured
+Warning: resource envoyproxies/ttalkkak is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+envoyproxy.gateway.envoyproxy.io/ttalkkak configured
+Warning: resource gatewayclasses/ttalkkak is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+gatewayclass.gateway.networking.k8s.io/ttalkkak configured
+Warning: resource gateways/ttalkkak is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+gateway.gateway.networking.k8s.io/ttalkkak configured
+Warning: resource aigatewayroutes/ttalkkak is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+aigatewayroute.aigateway.envoyproxy.io/ttalkkak configured
+Warning: resource httproutes/ttalkkak-public is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+httproute.gateway.networking.k8s.io/ttalkkak-public configured
+Warning: resource httproutes/ttalkkak-usage is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+httproute.gateway.networking.k8s.io/ttalkkak-usage configured
+Warning: resource securitypolicies/ttalkkak-auth is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+securitypolicy.gateway.envoyproxy.io/ttalkkak-auth configured
+Warning: resource envoyextensionpolicies/ttalkkak-cache-salt is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+envoyextensionpolicy.gateway.envoyproxy.io/ttalkkak-cache-salt configured
+Warning: resource backendtrafficpolicies/ttalkkak-limits is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+backendtrafficpolicy.gateway.envoyproxy.io/ttalkkak-limits configured
+global:
+  rules:
+  - clientSelectors:
+    - headers:
+      - name: x-ttalkkak-tenant
+        type: Exact
+        value: acme
+    cost:
+      request:
+        from: Number
+        number: 0
+      response:
+        from: Metadata
+        metadata:
+          key: total_tokens
+          namespace: io.envoy.ai_gateway
+    limit:
+      requests: 200
+      unit: Minute
+type: Global
+
+deployment "ttalkkak-ops" successfully rolled out
+
+# 연속 요청 15개 (max_tokens 64, 키는 파일에서 읽음)
+start(UTC) 2026-11-17T13:39:36Z
+1 500 0.008665s
+   body: 
+2 500 0.005720s
+   body: 
+3 500 0.005684s
+   body: 
+4 500 0.005674s
+   body: 
+5 500 0.005689s
+   body: 
+6 500 0.006139s
+   body: 
+7 500 0.005713s
+   body: 
+8 500 0.005543s
+   body: 
+9 500 0.005805s
+   body: 
+10 500 0.006336s
+   body: 
+11 500 0.006348s
+   body: 
+12 500 0.005594s
+   body: 
+13 500 0.005697s
+   body: 
+14 500 0.005124s
+   body: 
+15 500 0.005240s
+   body: 
+2026-11-17T22:39:37+09:00
+
+# 연속 요청 15개, EG 수정(R19) 뒤 (max_tokens 64, 키는 파일에서 읽음)
+start(UTC) 2026-11-17T13:42:28Z
+1 200 0.734619s
+   usage 102
+2 200 0.310878s
+   usage 102
+3 429 0.011248s
+   body: 
+4 429 0.010158s
+   body: 
+5 429 0.010189s
+   body: 
+6 429 0.008479s
+   body: 
+7 429 0.010613s
+   body: 
+8 429 0.007614s
+   body: 
+9 429 0.009543s
+   body: 
+10 429 0.010047s
+   body: 
+11 429 0.010363s
+   body: 
+12 429 0.007985s
+   body: 
+13 429 0.008000s
+   body: 
+14 429 0.007362s
+   body: 
+15 429 0.007447s
+   body: 
+2026-11-17T22:42:31+09:00
+
+# 비교 (2026-11-17T22:43:11+09:00)
+$ kubectl logs -n envoy-gateway-system <envoy 파드> -c envoy --since-time=2026-11-17T13:42:00Z | grep status:429
+13
+200 (acme):
+2
+{"cached_input_tokens":0,"duration_ms":729,"input_tokens":38,"model":"Qwen/Qwen2.5-1.5B-Instruct-AWQ","output_tokens":64,"request_id":"9221dd5f-172c-436f-8560-3514ed9f8551","status":200,"subject":"api-key","tenant":"acme","ts":"2026-11-17T13:42:28.974Z"}
+{"cached_input_tokens":32,"duration_ms":306,"input_tokens":38,"model":"Qwen/Qwen2.5-1.5B-Instruct-AWQ","output_tokens":64,"request_id":"62eded66-3b9f-4930-8372-33d4139ae5ca","status":200,"subject":"api-key","tenant":"acme","ts":"2026-11-17T13:42:29.732Z"}
+{"cached_input_tokens":null,"duration_ms":6,"input_tokens":null,"model":"Qwen/Qwen2.5-1.5B-Instruct-AWQ","output_tokens":null,"request_id":"9d960754-2ed5-40f6-b105-53ef97b4d7d2","status":429,"subject":"api-key","tenant":"acme","ts":"2026-11-17T13:42:30.067Z"}
+$ curl /api/live (콘솔)
+signals {"rejected_429_1h": 13, "waiting": 0.0, "idle_replicas": 0, "ready_replicas": 3, "max_replicas": 2}
+tenants [{"tenant": "acme", "tokens_last_min": 204, "limit_tpm": 200, "pct": 102.0, "throttled_1h": 13}, {"tenant": "beta", "tokens_last_min": 0, "limit_tpm": null, "pct": null, "throttled_1h": 0}]
+
+# 원래대로 (2026-11-17T22:43:25+09:00)
+$ .venv/bin/ttalkkak ops tenants set-limit acme none
+acme 분당 토큰 한도: none
+$ .venv/bin/ttalkkak ops tenants key-revoke <접두어 tk_acme_ + 8자>
+<접두어> 키를 폐기했습니다
+secret/ttalkkak-tenants configured
+deployment.apps/ttalkkak-ops unchanged
+backendtrafficpolicy.gateway.envoyproxy.io/ttalkkak-limits configured
+id              이름                   분당 토큰  캐시          활성 키
+acme            Acme                     -  isolated       1
+beta            Beta                     -  isolated       1

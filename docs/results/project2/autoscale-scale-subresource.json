@@ -1,0 +1,1 @@
+{"kind":"Scale","apiVersion":"autoscaling/v1","metadata":{"name":"ttalkkak-20261117-214304-c1","namespace":"ttalkkak","uid":"a1d8e264-80d1-47b8-a26b-7531cfad444e","resourceVersion":"48125","creationTimestamp":"2026-11-17T12:54:39Z"},"spec":{"replicas":1},"status":{"replicas":1,"selector":"app.kubernetes.io/name=ttalkkak-20261117-214304-c1"}}

@@ -1,0 +1,11 @@
+# 9절 자동 증감 (세 번째: 시험 한 번 더, 그래도 안 늘면 20명 고정 300초)
+2026-11-18T01:30:34+09:00
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+ttalkkak-20261117-214304-c1-7749b7958d-jchlv       1/1   Running   0              64m
+{"ok":true,"enabled":true}
+start state: 2026-11-18T01:30:35+09:00 spec=1 gpu=5110 MiB
+$ POST /api/loadtest {"max_users": 20, "autoscale_on": true}
+id=20261117-163105 2026-11-18T01:31:05+09:00
+test end: 2026-11-18T01:36:26+09:00 done 
+back to 1: 2026-11-18T01:41:30+09:00
+wait end: 2026-11-18T01:43:31+09:00 spec=1 up_seen=1

@@ -1,0 +1,35 @@
+# AWQ 복제본 2개
+$ .venv/bin/ttalkkak ops export --run 20261117-214304 --target gateway --out deploy/ --replicas 2 --max-replicas 2 --autoscale --gpu-share resource --hostname ttalkkak.local --force
+exit=0
+        - --gpu-memory-utilization
+        - '0.42'
+$ kubectl apply -f deploy/20-vllm.yaml
+deployment.apps/ttalkkak-20261117-214304-c1 configured
+service/ttalkkak-20261117-214304-c1 unchanged
+configmap/ttalkkak-autoscale configured
+configmap/ttalkkak-capacity unchanged
+2026-11-17T22:05:01+09:00
+Waiting for deployment "ttalkkak-20261117-214304-c1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "ttalkkak-20261117-214304-c1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "ttalkkak-20261117-214304-c1" rollout to finish: 1 of 2 updated replicas are available...
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out
+rollout exit=0 elapsed=272s
+NAME                                           READY   STATUS    RESTARTS   AGE
+ttalkkak-20261117-214304-c1-7749b7958d-c46pb   1/1     Running   0          4m32s
+ttalkkak-20261117-214304-c1-7749b7958d-g4fmg   1/1     Running   0          4m32s
+6749 MiB
+== pod/ttalkkak-20261117-214304-c1-7749b7958d-c46pb
+(EngineCore pid=146) INFO 11-17 13:08:37 [model_runner.py:428] Model loading took 1.1 GiB memory and 173.072751 seconds
+(EngineCore pid=146) INFO 11-17 13:09:11 [model_runner.py:1163] Graph capturing finished in 6 secs, took 0.32 GiB
+(EngineCore pid=146) INFO 11-17 13:09:11 [gpu_worker.py:772] Available KV cache memory: 1.16 GiB
+(EngineCore pid=146) INFO 11-17 13:09:11 [kv_cache_utils.py:1147] GPU KV cache size: 43,360 tokens, Maximum concurrency for 32,768 tokens per request: 1.32x
+(EngineCore pid=146) INFO 11-17 13:09:20 [model_runner.py:1163] Graph capturing finished in 8 secs, took -0.29 GiB
+INFO:     Application startup complete.
+== pod/ttalkkak-20261117-214304-c1-7749b7958d-g4fmg
+(EngineCore pid=144) INFO 11-17 13:08:37 [model_runner.py:428] Model loading took 1.1 GiB memory and 174.585529 seconds
+(EngineCore pid=144) INFO 11-17 13:09:11 [model_runner.py:1163] Graph capturing finished in 6 secs, took 0.32 GiB
+(EngineCore pid=144) INFO 11-17 13:09:11 [gpu_worker.py:772] Available KV cache memory: 1.16 GiB
+(EngineCore pid=144) INFO 11-17 13:09:11 [kv_cache_utils.py:1147] GPU KV cache size: 43,360 tokens, Maximum concurrency for 32,768 tokens per request: 1.32x
+(EngineCore pid=144) INFO 11-17 13:09:21 [model_runner.py:1163] Graph capturing finished in 8 secs, took 0.23 GiB
+INFO:     Application startup complete.
+deployment.apps/ttalkkak-20261117-214304-c1 scaled

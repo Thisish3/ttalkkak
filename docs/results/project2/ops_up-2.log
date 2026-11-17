@@ -1,0 +1,2 @@
+$ .venv/bin/ttalkkak ops up --model Qwen/Qwen2.5-1.5B-Instruct --chip /home/a/.ttalkkak/nvidia-gpu-no-sglang.yaml --gpu-memory-utilization 0.8
+2026-11-17T18:22:41+09:00

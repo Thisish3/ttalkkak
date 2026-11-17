@@ -1,0 +1,50 @@
+# 부하 시험 r1-mu100 (복제본 1, probe_seconds=기본 30, max_users=100)
+2026-11-18T00:00:11+09:00
+$ POST /api/autoscale {"enabled": false}
+{"ok":true,"enabled":false}
+false
+$ kubectl scale deployment/ttalkkak-20261117-214304-c1 -n ttalkkak --replicas=1
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out
+ttalkkak-20261117-214304-c1-7749b7958d-vvjwb   1/1   Running   0     47m
+prometheus vllm series: 1
+$ POST /api/loadtest {"max_users": 100, "autoscale_on": false}
+time gpu_util_pct gpu_mem_mib per_pod_running
+{"id":"20261117-150017"}
+id=20261117-150017
+00:00:18 search 
+00:00:38 search 
+00:00:58 search 
+00:01:18 search 
+00:01:38 search 
+00:01:58 search 
+00:02:18 search 
+00:02:38 search 
+00:02:58 search 
+00:03:18 search 
+00:03:38 search 
+00:03:58 search 
+00:04:18 search 
+00:04:38 search 
+00:04:58 search 
+00:05:18 search 
+00:05:38 search 
+00:05:58 search 
+00:06:18 search 
+00:06:38 search 
+00:06:58 confirm 
+00:07:18 confirm 
+00:07:38 confirm 
+00:07:58 confirm 
+00:08:18 confirm 
+00:08:39 confirm 
+00:08:59 confirm 
+00:09:19 confirm 
+00:09:39 confirm 
+00:09:59 confirm 
+00:10:19 confirm 
+00:10:39 done 
+2026-11-18T00:10:39+09:00
+$ kubectl get configmap ttalkkak-capacity -n ttalkkak -o jsonpath='{.data.capacity\.json}'
+{"1": {"loadtest_id": "20261117-150017", "created_at": "2026-11-17T15:00:17.978532Z", "replicas": 1, "model": "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "ttft_target_ms": 1000.0, "max_tokens_per_min": 267008.55787826824, "method": "goodput", "target_attainment": 0.95, "itl_target_ms": null, "stop_reason": "converged", "capacity_streams": 16, "confirmed": true, "confirm_rate_rps": 10.057, "knee_streams": 27.051592547446905, "knee_output_tok_s": 2206.4419442220888, "unconfirmed_attempt": null}, "2": {"loadtest_id": "20261117-143827", "created_at": "2026-11-17T14:38:27.803001Z", "replicas": 2, "model": "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "ttft_target_ms": 1000.0, "max_tokens_per_min": 267452.1865322649, "method": "goodput", "target_attainment": 0.95, "itl_target_ms": null, "stop_reason": "converged", "capacity_streams": 16, "confirmed": true, "confirm_rate_rps": 10.063, "knee_streams": 27.000547625663973, "knee_output_tok_s": 2221.1038590786743, "unconfirmed_attempt": {"loadtest_id": "20261117-144956", "created_at": "2026-11-17T14:49:56.785388+00:00"}}}
+copied runs/loadtests/20261117-150017.json

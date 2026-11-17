@@ -1,0 +1,38 @@
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 600
+2026-11-17T21:17:51+09:00
+오류: ttalkkak-20261117-193453-c1-epp이 600초 안에 준비되지 않았습니다
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  10m   deployment-controller  Scaled up replica set ttalkkak-20261117-193453-c1-epp-6f76585cbf from 0 to 1
+exit=1
+2026-11-17T21:27:54+09:00
+$ .venv/bin/ttalkkak ops cluster status
+파드                                              준비     재시작  상태
+dex-5b9c467774-66f4m                           1/1       2  Running
+redis-74964f5fc4-nfnhb                         1/1       2  Running
+ttalkkak-20261117-193453-c1-5fbd4bb6b9-k9dnx   1/1       0  Running
+ttalkkak-20261117-193453-c1-epp-6f76585cbf-6dpc5   0/1       4  Running
+ttalkkak-ops-666f7b7f5b-jr5zk                  1/1       0  Running
+envoy-ai-gateway-system   ai-gateway-controller             ClusterIP   10.43.236.248   <none>        9443/TCP,1063/TCP,8080/TCP,18002/TCP               5d22h
+envoy-gateway-system      envoy-gateway                     ClusterIP   10.43.108.21    <none>        18000/TCP,18001/TCP,18002/TCP,19001/TCP,9443/TCP   5d22h
+envoy-gateway-system      envoy-ratelimit                   ClusterIP   10.43.10.100    <none>        8081/TCP,19001/TCP                                 5d22h
+
+# R13 수정 뒤 다시 적용
+$ .venv/bin/ttalkkak ops cluster up --out deploy/ --wait 600
+2026-11-17T21:29:22+09:00
+오류: ttalkkak-20261117-193453-c1-epp이 600초 안에 준비되지 않았습니다
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  11m   deployment-controller  Scaled up replica set ttalkkak-20261117-193453-c1-epp-6f76585cbf from 0 to 1
+exit=1
+2026-11-17T21:29:25+09:00
+$ .venv/bin/ttalkkak ops cluster status
+파드                                              준비     재시작  상태
+dex-5b9c467774-66f4m                           1/1       2  Running
+redis-74964f5fc4-nfnhb                         1/1       2  Running
+ttalkkak-20261117-193453-c1-5fbd4bb6b9-k9dnx   1/1       0  Running
+ttalkkak-20261117-193453-c1-epp-6f76585cbf-6dpc5   0/1       4  Running
+ttalkkak-20261117-193453-c1-epp-c55675c6-tglht   0/1       0  Pending
+ttalkkak-ops-666f7b7f5b-jr5zk                  1/1       0  Running

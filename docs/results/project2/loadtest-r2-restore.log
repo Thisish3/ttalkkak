@@ -1,0 +1,38 @@
+# 부하 시험 r2-restore (복제본 2, probe_seconds=기본 30)
+2026-11-17T23:32:02+09:00
+$ POST /api/autoscale {"enabled": false}
+{"ok":true,"enabled":false}
+false
+$ kubectl scale deployment/ttalkkak-20261117-214304-c1 -n ttalkkak --replicas=2
+deployment.apps/ttalkkak-20261117-214304-c1 scaled
+deployment "ttalkkak-20261117-214304-c1" successfully rolled out
+ttalkkak-20261117-214304-c1-7749b7958d-cxkpb   1/1   Running   0     4m12s
+ttalkkak-20261117-214304-c1-7749b7958d-vvjwb   1/1   Running   0     19m
+prometheus vllm series: 2
+$ POST /api/loadtest {"max_users": 20, "autoscale_on": false}
+{"id":"20261117-143203"}
+id=20261117-143203
+23:32:03 search 
+23:32:23 search 
+23:32:43 search 
+23:33:03 search 
+23:33:23 search 
+23:33:43 search 
+23:34:03 search 
+23:34:23 search 
+23:34:44 search 
+23:35:04 search 
+23:35:24 search 
+23:35:44 search 
+23:36:04 search 
+23:36:24 search 
+23:36:44 search 
+23:37:04 confirm 
+23:37:24 confirm 
+23:37:44 confirm 
+23:38:04 confirm 
+23:38:24 done 
+2026-11-17T23:38:24+09:00
+$ kubectl get configmap ttalkkak-capacity -n ttalkkak -o jsonpath='{.data.capacity\.json}'
+{"1": {"loadtest_id": "20261117-135745", "created_at": "2026-11-17T13:57:45.572748Z", "replicas": 1, "model": "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "ttft_target_ms": 1000.0, "max_tokens_per_min": 295813.26172511425, "method": "goodput", "target_attainment": 0.95, "itl_target_ms": null, "stop_reason": "max_streams_reached", "capacity_streams": 20, "confirmed": true, "confirm_rate_rps": 10.78, "knee_streams": null, "knee_output_tok_s": null, "unconfirmed_attempt": null}, "2": {"loadtest_id": "20261117-143203", "created_at": "2026-11-17T14:32:03.686613Z", "replicas": 2, "model": "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "ttft_target_ms": 1000.0, "max_tokens_per_min": 222825.72583016055, "method": "goodput", "target_attainment": 0.95, "itl_target_ms": null, "stop_reason": "max_streams_reached", "capacity_streams": 20, "confirmed": true, "confirm_rate_rps": 7.665, "knee_streams": null, "knee_output_tok_s": null, "unconfirmed_attempt": null}}
+copied runs/loadtests/20261117-143203.json

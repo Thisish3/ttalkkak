@@ -1,0 +1,32 @@
+$ .venv/bin/ttalkkak ops up --model Qwen/Qwen2.5-1.5B-Instruct --chip /home/a/.ttalkkak/nvidia-gpu-no-sglang.yaml --gpu-memory-utilization 0.8
+2026-11-17T19:20:14+09:00
+# ttalkkak report
+
+**선택:** 없음 (모든 후보 탈락)
+
+## 경고
+- 없음
+
+## 요구사항
+- 없음
+
+## 예측 vs 실측
+
+| 후보 | 엔진 | max_model_len | KV 토큰 예측 / 실측 | 출력 tok/s | TTFT ms | 정확도 |
+|---|---|---|---|---|---|---|
+| c1 | vllm | 32768 | 94543 / - | - | - | - |
+| c2 | vllm | 32768 | 189086 / - | - | - | - |
+| c3 | sglang | 32768 | 124502 / - | - | - | - |
+
+## 탈락·실패
+- c1: 검증 오류: FileNotFoundError: [Errno 2] No such file or directory: 'lm_eval'
+- c2: 검증 오류: FileNotFoundError: [Errno 2] No such file or directory: 'lm_eval'
+- c3: 기동 실패 (bad_arg)
+```
+no image for sglang on nvidia
+```
+
+## 에이전트 검사
+
+exit=1
+2026-11-17T19:34:16+09:00
