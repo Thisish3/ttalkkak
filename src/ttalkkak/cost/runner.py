@@ -52,11 +52,16 @@ def guidellm_cmd(
     ]  # fmt: skip
 
 
-def _backend(base_url: str, model: str, api_key: str | None) -> str:
+def _backend(
+    base_url: str, model: str, api_key: str | None, validate: bool = True
+) -> str:
     target = base_url.removesuffix("/v1")
     backend = f"kind=openai_http,target={target},model={model}"
     if api_key:
         backend += f",api_key={api_key}"
+    if not validate:
+        # guidellm은 시작할 때 GET {target}/health로 확인한다. 게이트웨이에는 그 경로가 없다.
+        backend += ",validate_backend=false"
     return backend
 
 
@@ -91,6 +96,7 @@ def goodput_cmd(
     tolerance: float,
     max_probes: int,
     api_key: str | None = None,
+    validate: bool = True,
 ) -> list[str]:
     """guidellm's goodput search: double concurrency from 1, then bisect.
 
@@ -103,7 +109,7 @@ def goodput_cmd(
     )
     return [
         "guidellm", "run",
-        "--backend", _backend(base_url, model, api_key),
+        "--backend", _backend(base_url, model, api_key, validate),
         "--profile", profile,
         "--metrics", _slo(ttft_ms, itl_ms),
         "--constraint", f"kind=max_duration,seconds={probe_seconds}",
@@ -123,11 +129,12 @@ def poisson_cmd(
     seconds: int,
     warmup_seconds: int,
     api_key: str | None = None,
+    validate: bool = True,
 ) -> list[str]:
     """One open-loop run: Poisson arrivals at rate requests/s."""
     return [
         "guidellm", "run",
-        "--backend", _backend(base_url, model, api_key),
+        "--backend", _backend(base_url, model, api_key, validate),
         "--profile", f"kind=poisson,rate={rate:g},warmup={warmup_seconds}",
         "--metrics", _slo(ttft_ms, itl_ms),
         "--constraint", f"kind=max_duration,seconds={seconds}",

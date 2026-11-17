@@ -666,3 +666,81 @@ def test_probe_seconds_out_of_range(bad):
 
     with pytest.raises(ValueError):
         check_probe_seconds(bad)
+
+
+def _secret_applies(kc):
+    out = []
+    for args, inp in kc.calls:
+        if args[:2] == ["apply", "-f"] and inp:
+            doc = json.loads(inp)
+            if doc["kind"] == "Secret":
+                out.append(doc)
+    return out
+
+
+def publishing_runner(tmp_path, store, run, kc, key_ready, wait_s=180.0):
+    return LoadTestRunner(
+        tmp_path, store, "https://gw/v1", "m", run=run,
+        now=lambda: datetime(2026, 11, 14, 9, 0, tzinfo=UTC),
+        kubectl=kc, sync=True, publish_keys=True, key_ready=key_ready,
+        key_wait_s=wait_s, sleep=lambda s: None,
+    )  # fmt: skip
+
+
+def test_published_key_reaches_the_gateway_secret_before_guidellm(tmp_path, store):
+    # 데스크탑: 시험 키가 tenants.db에만 있어 게이트웨이가 401을 냈다.
+    kc, order = Kubectl(), []
+
+    def run(cmd, **kw):
+        order.append(("guidellm", len(_secret_applies(kc))))
+        good_run(cmd, **kw)
+
+    def ready(key):
+        order.append(("ready", len(_secret_applies(kc))))
+        return True
+
+    publishing_runner(tmp_path, store, run, kc, ready).start(5, 1, True)
+    secrets = _secret_applies(kc)
+    assert len(secrets) == 2  # after issue, after revoke
+    first = json.loads(secrets[0]["stringData"]["tenants.json"])
+    assert secrets[0]["metadata"] == {
+        "name": "ttalkkak-tenants",
+        "namespace": "ttalkkak",
+    }
+    assert LOADTEST_TENANT in json.dumps(first)
+    assert order[0] == ("ready", 1)
+    assert all(n == 1 for what, n in order if what == "guidellm")
+    assert store.active_keys() == []
+
+
+def test_key_never_accepted_is_an_error_and_the_key_is_revoked(tmp_path, store):
+    kc, calls = Kubectl(), []
+    publishing_runner(
+        tmp_path, store, lambda cmd, **kw: calls.append(cmd), kc, lambda k: False, 0
+    ).start(5, 1, True)
+    (rec,) = LoadTestRunner(tmp_path, store, "https://gw/v1", "m").list()
+    assert "받아들이지 않았습니다" in rec["error"]
+    assert calls == []
+    assert store.active_keys() == []
+    assert len(_secret_applies(kc)) == 2
+
+
+def test_loadtest_skips_guidellms_health_check_but_cost_runs_keep_it():
+    assert ",validate_backend=false" not in goodput_cmd(
+        "http://vllm:8000/v1", "m", "d", Path("o.json"), ttft_ms=1, itl_ms=None,
+        attainment=0.95, max_streams=2, probe_seconds=10, warmup_seconds=5,
+        tolerance=0.2, max_probes=2,
+    )[3]  # fmt: skip
+    assert ",validate_backend=false" not in poisson_cmd(
+        "http://vllm:8000/v1", "m", "d", Path("o.json"), rate=1, ttft_ms=1,
+        itl_ms=None, seconds=10, warmup_seconds=5,
+    )[3]  # fmt: skip
+
+
+def test_loadtest_guidellm_commands_disable_backend_validation(tmp_path, store):
+    calls = []
+    runner(tmp_path, store, fake_guidellm(calls=calls), Kubectl()).start(5, 1, True)
+    assert calls
+    assert all(
+        c[c.index("--backend") + 1].endswith(",validate_backend=false") for c in calls
+    )

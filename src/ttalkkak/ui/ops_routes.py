@@ -440,6 +440,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
                     LoadTestRunner(
                         root, deps.store, deps.gateway_url, "",
                         kubectl=deps.kubectl, namespace=deps.namespace,
+                        publish_keys=deps.kubectl is not None,
                     )
                 )  # fmt: skip
             return runner_box[0]

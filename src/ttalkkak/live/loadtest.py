@@ -7,6 +7,7 @@ import logging
 import re
 import subprocess
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from ttalkkak.cost.runner import (
 from ttalkkak.errors import TtalkkakError
 
 MAX_USERS = 100
+TENANTS_SECRET = "ttalkkak-tenants"
+KEY_WAIT_S = 180.0
+KEY_POLL_S = 5.0
 TARGET_ATTAINMENT = 0.95
 # Each probe is a sustained window: 30 s, of which guidellm discards the first
 # 5 s as warmup, so 25 s are measured. 10 probes bound the search at ~5 min.
@@ -121,6 +125,10 @@ class LoadTestRunner:
         itl_target_ms: float | None = None,
         target_attainment: float = TARGET_ATTAINMENT,
         sync: bool = False,
+        publish_keys: bool = False,
+        key_ready=None,
+        key_wait_s: float = KEY_WAIT_S,
+        sleep=time.sleep,
     ):
         self.dir = Path(root) / "runs" / "loadtests"
         self.store = store
@@ -134,6 +142,12 @@ class LoadTestRunner:
         self.itl_target_ms = itl_target_ms
         self.target_attainment = target_attainment
         self.sync = sync
+        # 게이트웨이 인증은 클러스터의 ttalkkak-tenants Secret을 읽는다. 시험 키를
+        # 발급·폐기할 때 그 Secret을 다시 적용하고, 키가 통할 때까지 기다린다.
+        self.publish_keys = publish_keys
+        self.key_ready = key_ready or self._gateway_accepts
+        self.key_wait_s = key_wait_s
+        self.sleep = sleep
         self._lock = threading.Lock()
         self._active: str | None = None
 
@@ -235,6 +249,9 @@ class LoadTestRunner:
         try:
             key = self._issue_key()
             prefix = key[: len(f"tk_{LOADTEST_TENANT}_") + 8]
+            if self.publish_keys:
+                self._publish_tenants()
+                self._wait_for_key(key)
             probes, search = parse_goodput(
                 self._guidellm(record, "search", key, record["max_users"])
             )
@@ -262,6 +279,8 @@ class LoadTestRunner:
             try:
                 if prefix:
                     self._revoke(prefix)
+                    if self.publish_keys:
+                        self._publish_tenants()
             except Exception:  # noqa: BLE001
                 record["error"] = (
                     record["error"] or "부하 시험 키를 폐기하지 못했습니다"
@@ -306,6 +325,48 @@ class LoadTestRunner:
     def _revoke(self, prefix: str) -> None:
         self.store.revoke_key(prefix)
 
+    def _publish_tenants(self) -> None:
+        from ttalkkak.gateway.manifests import tenants_json
+
+        if self.kubectl is None:
+            raise TtalkkakError(
+                "kubectl이 없어 부하 시험 키를 게이트웨이에 알리지 못했습니다"
+            )
+        manifest = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": TENANTS_SECRET, "namespace": self.namespace},
+            "type": "Opaque",
+            "stringData": {"tenants.json": tenants_json(self.store)},
+        }
+        r = self.kubectl(["apply", "-f", "-"], input=json.dumps(manifest))
+        if r.returncode != 0:
+            raise TtalkkakError("테넌트 Secret을 갱신하지 못했습니다")
+
+    def _wait_for_key(self, key: str) -> None:
+        deadline = time.monotonic() + self.key_wait_s
+        while True:
+            if self.key_ready(key):
+                return
+            if time.monotonic() >= deadline:
+                raise TtalkkakError(
+                    f"게이트웨이가 {int(self.key_wait_s)}초 안에 부하 시험 키를 받아들이지 않았습니다"
+                )
+            self.sleep(KEY_POLL_S)
+
+    def _gateway_accepts(self, key: str) -> bool:
+        import httpx
+
+        try:
+            r = httpx.get(
+                f"{self.gateway_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10,
+            )
+        except httpx.HTTPError:
+            return False
+        return r.status_code == 200
+
     def _guidellm(self, record: dict, kind: str, key: str, arg) -> dict:
         """Run the search (arg = max users) or the open-loop check (arg = rate)."""
         work = self.dir / "stages"
@@ -316,6 +377,7 @@ class LoadTestRunner:
             "ttft_ms": self.ttft_target_ms,
             "itl_ms": self.itl_target_ms,
             "api_key": key,
+            "validate": False,
         }
         if kind == "search":
             cmd = goodput_cmd(
