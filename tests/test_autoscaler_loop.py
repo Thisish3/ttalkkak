@@ -129,7 +129,16 @@ def test_k8s_transport_scale_calls():
     def transport(method, path, body=None):
         calls.append((method, path, body))
         if path.endswith("/scale"):
-            return {"spec": {"replicas": 2}, "status": {"readyReplicas": 1}}
+            # 실제 autoscaling/v1 Scale: status에 readyReplicas가 없다 (데스크탑 실측)
+            return {
+                "spec": {"replicas": 2},
+                "status": {"replicas": 2, "selector": "a=b"},
+            }
+        if path.endswith("/deployments/vllm-x"):
+            return {
+                "spec": {"replicas": 2},
+                "status": {"replicas": 2, "readyReplicas": 1},
+            }
         return {"data": {"enabled": "true"}}
 
     k = K8s(transport)
@@ -138,7 +147,7 @@ def test_k8s_transport_scale_calls():
     assert k.get_configmap(NS, "ttalkkak-autoscale") == {"enabled": "true"}
     assert calls[0] == (
         "GET",
-        f"/apis/apps/v1/namespaces/{NS}/deployments/vllm-x/scale",
+        f"/apis/apps/v1/namespaces/{NS}/deployments/vllm-x",
         None,
     )
     assert calls[1][0] == "PATCH" and calls[1][2] == {"spec": {"replicas": 3}}

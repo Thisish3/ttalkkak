@@ -77,7 +77,11 @@ class K8s:
         return body.get("data") or {}
 
     def get_scale(self, ns: str, deploy: str) -> tuple[int, int]:
-        body = self._call("GET", _scale_path(ns, deploy), None)
+        # Scale 하위 리소스(autoscaling/v1)의 status에는 readyReplicas가 없다
+        # (replicas, selector뿐). 원하는 수와 준비된 수는 Deployment 본체에서 읽는다.
+        body = self._call(
+            "GET", f"/apis/apps/v1/namespaces/{ns}/deployments/{deploy}", None
+        )
         return (
             int(body.get("spec", {}).get("replicas") or 0),
             int(body.get("status", {}).get("readyReplicas") or 0),
