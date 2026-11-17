@@ -337,3 +337,19 @@ def test_vllm_replicas_share_a_host_model_cache(store):
         "type": "DirectoryOrCreate",
     }
     assert any(x["name"] == "shm" for x in spec["volumes"])
+
+
+def test_epp_role_can_watch_objectives_and_model_rewrites(store):
+    _, d = docs(store)
+    (role,) = kind(d, "30-llmd.yaml", "Role")
+    allowed = {
+        (g, r)
+        for rule in role["rules"]
+        if {"get", "watch", "list"} <= set(rule["verbs"])
+        for g in rule["apiGroups"]
+        for r in rule["resources"]
+    }
+    assert ("inference.networking.k8s.io", "inferencepools") in allowed
+    assert ("", "pods") in allowed
+    assert ("inference.networking.x-k8s.io", "inferenceobjectives") in allowed
+    assert ("inference.networking.x-k8s.io", "inferencemodelrewrites") in allowed

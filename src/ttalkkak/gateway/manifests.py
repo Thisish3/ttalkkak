@@ -328,6 +328,13 @@ def _llmd(name: str, ns: str, pool: dict) -> list[dict]:
                     "verbs": ["get", "watch", "list"],
                 },
                 {
+                    # EPP v1.5.0은 이 두 종류도 지켜본다. 권한이 없으면 캐시가
+                    # 동기화되지 않아 시작하지 못한다 (데스크탑 실측).
+                    "apiGroups": ["inference.networking.x-k8s.io"],
+                    "resources": ["inferenceobjectives", "inferencemodelrewrites"],
+                    "verbs": ["get", "watch", "list"],
+                },
+                {
                     "apiGroups": [""],
                     "resources": ["pods"],
                     "verbs": ["get", "watch", "list"],
