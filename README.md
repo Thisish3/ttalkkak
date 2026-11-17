@@ -1,21 +1,55 @@
-# ttalkkak (딸깍)
+<h1 align="center">ttalkkak <sub>딸깍</sub></h1>
 
-**칩 회사가 칩과 함께 주는 AI 인프라 소프트웨어 스택.** 클라우드 사업자가 그 칩 위에서 AI 에이전트 서비스를 바로 운영하게 해 줍니다. NVIDIA가 GPU에 NIM·Dynamo를 얹어 주는 것과 같은 자리를, 다른 추론 칩 회사가 채울 때 필요한 소프트웨어를 만들어 봅니다.
+<p align="center"><b>추론 칩 위에 바로 올리는 LLM 서빙 운영 스택</b><br>
+모델을 고르면 띄우고, 재고, 고객을 받고, 몰리면 늘립니다.</p>
+
+<p align="center">
+<img alt="python" src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white">
+<img alt="kubernetes" src="https://img.shields.io/badge/k3s-kubernetes-326CE5?logo=kubernetes&logoColor=white">
+<img alt="vllm" src="https://img.shields.io/badge/engine-vLLM-30A2FF">
+<img alt="llm-d" src="https://img.shields.io/badge/router-llm--d-6E40C9">
+<img alt="tauri" src="https://img.shields.io/badge/app-Tauri%20v2-24C8DB?logo=tauri&logoColor=white">
+<img alt="tests" src="https://img.shields.io/badge/tests-577%20passed-2EA043">
+<img alt="validated" src="https://img.shields.io/badge/validated-RTX%203060%20Ti-76B900?logo=nvidia&logoColor=white">
+</p>
+
+<p align="center"><img src="docs/images/app_live.png" alt="ttalkkak 콘솔 앱 실시간 화면" width="880"></p>
+
+## 왜 만드나
+
+NVIDIA는 GPU와 함께 NIM과 Dynamo를 내놓습니다. 칩만 팔지 않고, 그 칩 위에서 서비스를 돌리는 소프트웨어까지 함께 건넵니다. 다른 추론 칩 회사가 같은 자리를 채우려면 무엇이 필요한지, 실제로 만들어 보면서 확인하는 프로젝트입니다.
+
+클라우드 사업자는 ttalkkak으로 모델을 검증해 올리고, 고객별 키와 한도를 걸고, 원가와 청구를 계산하고, 몰리는 트래픽에 맞춰 복제본을 늘리고 줄입니다. 이용자는 그 위에서 터미널 에이전트를 씁니다.
 
 <p align="center"><img src="docs/images/ttalkkak_overview.png" alt="ttalkkak 개요: 이용자·사업자·칩 회사, Envoy AI Gateway → llm-d 라우터 → vLLM 복제본, 테넌트·원가·청구·관측" width="900"></p>
 
-> **상태 (2026-11-12): 구현은 되어 있고, 실제 GPU에서 처음부터 끝까지 돌린 적은 아직 없습니다.**
-> 단위 테스트 295개는 GPU 없이 통과합니다. 아래 표의 "실기 검증" 칸이 채워져야 "된다"고 말합니다. 지금은 프로젝트 1(뼈대 실증)을 진행 중입니다.
+## 프로젝트 2 · 몰려도 버티는 서빙
+
+<p align="center"><img src="docs/images/project2_architecture.png" alt="프로젝트 2 구조: 운영자 앱 → 콘솔 서버(용량 측정, 자동 증감) → Envoy AI Gateway → llm-d → vLLM 복제본" width="900"></p>
+
+- **용량을 숫자로.** guidellm의 goodput 탐색으로 "요청 95 %가 첫 글자 1초 안"을 지키는 동시 사용자 수를 찾고, 그 속도의 열린 부하로 한 번 더 확인한 값만 용량으로 씁니다.
+- **넘치면 늘리고, 한가하면 줄입니다.** 용량 사용률과 대기열을 보고 복제본을 조절하고, 결정과 이유를 모두 기록합니다.
+- **어디서든 같은 화면.** 운영자 앱은 macOS·Windows·Linux에서 원격 콘솔에 붙습니다. 토큰은 OS 키체인에만 둡니다.
+
+RTX 3060 Ti(8GB) 한 장에서 실제로 돌린 결과입니다. 자세한 근거는 [docs/results/project2](docs/results/project2/summary.md)에 있습니다.
+
+| 확인 | 결과 |
+|---|---|
+| GPU 한 장에 올라가는 복제본 | bf16 1.5B는 1개, 4비트 AWQ는 2개 |
+| 복제본 1개 vs 2개 | 총 처리량은 같음(267k vs 273k 토큰/분). 열린 부하에서 SLO를 지킨 동시 사용자는 16 → 36명 |
+| 자동 증감 | 사용률 110 %가 2분 → 1→2, 새 복제본 준비 110초, 유휴 → 2→1, 오류율 0 |
+| 복제본 강제 종료 | 재기동 144초 동안 오류율 0 |
+| 고객별 한도 | 한도를 넘는 요청은 429, 콘솔 집계와 게이트웨이 로그가 일치 |
+
+<p align="center"><img src="docs/images/app_loadtest.png" alt="부하 시험: 시험 기록별 동시 사용자 대 첫 글자 p99" width="880"></p>
 
 ## 누가 무엇을 하나
 
-| 누구 | 예 | 하는 일 | 화면 |
-|---|---|---|---|
-| 칩 회사 | 추론 칩 회사 | ttalkkak을 칩과 함께 제공, 자기 칩과 엔진을 끼움 | (코드) |
-| 클라우드 사업자 | 클라우드 회사의 운영자 | 고객·키·사용량·청구 관리, 지표 확인, 모델 올리기 | 웹 콘솔, `ttalkkak ops` |
-| 클라우드 이용자 | 그 클라우드의 고객 | 터미널에서 에이전트 사용 | `ttalkkak` |
-
-지금 "칩" 자리에는 RTX 3060 Ti(8GB)와 vLLM이 들어가 있습니다. 다른 칩을 끼우는 자리는 아직 열려 있지 않습니다(프로젝트 2에서 설계).
+| 누구 | 하는 일 | 쓰는 것 |
+|---|---|---|
+| 칩 회사 | 자기 칩과 추론 엔진을 칩 설정 파일로 끼워 넣습니다 | `chips/*.yaml` |
+| 클라우드 사업자 | 모델 검증과 배포, 고객·키·한도, 원가·청구, 용량과 증감 | 콘솔 앱, `ttalkkak ops` |
+| 이용자 | 터미널에서 에이전트와 대화합니다. 턴마다 토큰과 예상 요금이 보입니다 | `ttalkkak` |
 
 ## 기능과 상태
 
