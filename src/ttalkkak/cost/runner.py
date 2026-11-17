@@ -87,18 +87,19 @@ def goodput_cmd(
     attainment: float,
     max_streams: int,
     probe_seconds: int,
-    probe_requests: int,
+    warmup_seconds: int,
+    tolerance: float,
     max_probes: int,
     api_key: str | None = None,
 ) -> list[str]:
     """guidellm's goodput search: double concurrency from 1, then bisect.
 
-    Each probe stops after probe_requests processed requests or probe_seconds,
-    whichever comes first.
+    Each probe runs probe_seconds; the first warmup_seconds are not measured.
     """
     profile = (
         f"kind=goodput,target_attainment={attainment},initial_streams=1,"
-        f"max_streams={max_streams},max_probes={max_probes}"
+        f"max_streams={max_streams},max_probes={max_probes},"
+        f"tolerance={tolerance},warmup={warmup_seconds}"
     )
     return [
         "guidellm", "run",
@@ -106,7 +107,6 @@ def goodput_cmd(
         "--profile", profile,
         "--metrics", _slo(ttft_ms, itl_ms),
         "--constraint", f"kind=max_duration,seconds={probe_seconds}",
-        "--constraint", f"kind=min_requests,count={probe_requests}",
         *_tail(data, out, model),
     ]  # fmt: skip
 
@@ -121,13 +121,14 @@ def poisson_cmd(
     ttft_ms: float,
     itl_ms: float | None,
     seconds: int,
+    warmup_seconds: int,
     api_key: str | None = None,
 ) -> list[str]:
     """One open-loop run: Poisson arrivals at rate requests/s."""
     return [
         "guidellm", "run",
         "--backend", _backend(base_url, model, api_key),
-        "--profile", f"kind=poisson,rate={rate:g}",
+        "--profile", f"kind=poisson,rate={rate:g},warmup={warmup_seconds}",
         "--metrics", _slo(ttft_ms, itl_ms),
         "--constraint", f"kind=max_duration,seconds={seconds}",
         *_tail(data, out, model),
@@ -184,8 +185,16 @@ def _probe_metrics(b: dict) -> dict:
         "output_tok_s": point.output_tok_s,
         "tokens_per_min": tpm,
         "error_rate": error_rate,
-        "request_rate": float(_successful(b, "requests_per_second")["mean"]),
+        "request_rate": _measured_rate(b),
+        "duration_s": float(b["duration"]),
     }
+
+
+def _measured_rate(b: dict) -> float:
+    """Successful requests / measured window (warmup excluded by guidellm)."""
+    seconds = float(b["duration"])
+    ok = b["metrics"]["request_totals"]["successful"]
+    return ok / seconds if seconds > 0 else 0.0
 
 
 def parse_goodput(report: dict) -> tuple[list[Probe], dict]:
@@ -235,7 +244,7 @@ def parse_confirm(report: dict, target: float, confidence: float = 0.95) -> dict
         )
     return {
         "rate_rps": b["config"]["strategy"].get("rate"),
-        "achieved_rps": float(_successful(b, "requests_per_second")["mean"]),
+        "achieved_rps": _measured_rate(b),
         "attainment": attainment,
         "attainment_lower": lower,
         "attainment_upper": upper,
@@ -251,6 +260,7 @@ def parse_confirm(report: dict, target: float, confidence: float = 0.95) -> dict
 
 
 KNEE_MIN_POINTS = 5
+KNEE_MIN_SECONDS = 10
 
 
 def throughput_knee(probes: list[Probe]) -> dict:
@@ -259,6 +269,9 @@ def throughput_knee(probes: list[Probe]) -> dict:
     points = len({p.users for p in used})
     out = {"status": "no_knee", "streams": None, "output_tok_s": None}
     out["points"] = points
+    out["low_confidence"] = any(
+        p.duration_s is not None and p.duration_s < KNEE_MIN_SECONDS for p in used
+    )
     if points < KNEE_MIN_POINTS:
         out["reason"] = (
             f"동시 사용자 단계가 {points}개라 무릎을 계산하지 않았습니다 "

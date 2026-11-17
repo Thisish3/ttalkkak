@@ -350,3 +350,70 @@ def test_unconfirmed_record_is_not_used_and_needs_a_new_loadtest():
     records = {1: rec(), 2: bad}
     assert missing_loadtest_counts(records, 2) == [2]
     assert missing_loadtest_text(records, 3) == "부하 시험 필요: 2개(확인 실패), 3개"
+
+
+# ---- Task G fix round 1 ----
+
+
+def goodput_rec(tid, *, model="m", confirmed=True, tpm=1000.0):
+    return CapacityRecord(
+        loadtest_id=tid, created_at=NOW, replicas=1, model=model, ttft_target_ms=1000,
+        max_tokens_per_min=tpm, method="goodput", confirmed=confirmed,
+    )  # fmt: skip
+
+
+def merged(old, new):
+    from ttalkkak.capacity import merge_capacity, parse_capacity
+
+    raw = merge_capacity(None, old) if old else None
+    return parse_capacity(merge_capacity(raw, new))[1]
+
+
+def test_unconfirmed_result_keeps_the_confirmed_record_and_notes_the_attempt():
+    out = merged(goodput_rec("old"), goodput_rec("new", confirmed=False))
+    assert out.loadtest_id == "old" and out.confirmed is True
+    assert out.unconfirmed_attempt["loadtest_id"] == "new"
+    src = utilization(5, out, 1, "m")["source"]
+    assert src["unconfirmed_attempt"]["loadtest_id"] == "new"
+
+
+def test_unconfirmed_result_replaces_an_unconfirmed_or_other_model_record():
+    assert (
+        merged(
+            goodput_rec("old", confirmed=False), goodput_rec("new", confirmed=False)
+        ).loadtest_id
+        == "new"
+    )
+    assert (
+        merged(
+            goodput_rec("old", model="x"), goodput_rec("new", confirmed=False)
+        ).loadtest_id
+        == "new"
+    )
+
+
+def test_confirmed_result_replaces_and_clears_the_attempt_note():
+    first = merged(goodput_rec("old"), goodput_rec("mid", confirmed=False))
+    out = merged(first, goodput_rec("new"))
+    assert out.loadtest_id == "new" and out.unconfirmed_attempt is None
+
+
+def test_no_capacity_result_nulls_the_same_model_but_keeps_other_models():
+    null = goodput_rec("new", confirmed=None, tpm=None)
+    out = merged(goodput_rec("old"), null)
+    assert out.loadtest_id == "new" and out.max_tokens_per_min is None
+    assert utilization(5, out, 1, "m")["state"] == "needs_loadtest"
+    assert merged(goodput_rec("old", model="x"), null).loadtest_id == "old"
+
+
+def test_null_record_counts_as_missing():
+    from ttalkkak.capacity import missing_loadtest_counts
+
+    assert missing_loadtest_counts(
+        {1: goodput_rec("n", confirmed=None, tpm=None)}, 1
+    ) == [1]
+
+
+def test_model_mismatch_is_needs_loadtest_even_when_unconfirmed():
+    u = utilization(5, goodput_rec("x", model="other", confirmed=False), 1, "m")
+    assert u["state"] == "needs_loadtest"

@@ -1,0 +1,637 @@
+{
+ "conclusions": [
+  {
+   "probes": [
+    {
+     "streams": 1,
+     "attainment": 1.0,
+     "attainment_lower": 0.9457513064408929,
+     "attainment_upper": 1.0,
+     "determined_requests": 67,
+     "goodput": 2.6795459795625787,
+     "passed": true,
+     "resolved": false,
+     "aborted": false
+    },
+    {
+     "streams": 2,
+     "attainment": 1.0,
+     "attainment_lower": 0.9725181513145846,
+     "attainment_upper": 1.0,
+     "determined_requests": 136,
+     "goodput": 5.439129335537938,
+     "passed": true,
+     "resolved": true,
+     "aborted": false
+    },
+    {
+     "streams": 4,
+     "attainment": 0.9962121212121212,
+     "attainment_lower": 0.9788532010514333,
+     "attainment_upper": 0.9993312390657882,
+     "determined_requests": 264,
+     "goodput": 10.518994824141142,
+     "passed": true,
+     "resolved": true,
+     "aborted": false
+    },
+    {
+     "streams": 8,
+     "attainment": 1.0,
+     "attainment_lower": 0.9928809909838711,
+     "attainment_upper": 0.9999999999999999,
+     "determined_requests": 536,
+     "goodput": 21.43761106028328,
+     "passed": true,
+     "resolved": true,
+     "aborted": false
+    },
+    {
+     "streams": 16,
+     "attainment": 0.9929435483870968,
+     "attainment_lower": 0.9855041273510957,
+     "attainment_upper": 0.9965782434809421,
+     "determined_requests": 992,
+     "goodput": 38.75593692765574,
+     "passed": true,
+     "resolved": true,
+     "aborted": false
+    },
+    {
+     "streams": 32,
+     "attainment": 0.7995212447636146,
+     "attainment_lower": 0.7796435379537576,
+     "attainment_upper": 0.8180243696662048,
+     "determined_requests": 1671,
+     "goodput": 53.43156010694456,
+     "passed": false,
+     "resolved": true,
+     "aborted": false
+    },
+    {
+     "streams": 24,
+     "attainment": 0.95703125,
+     "attainment_lower": 0.9456957526684318,
+     "attainment_upper": 0.9660854255672136,
+     "determined_requests": 1536,
+     "goodput": 58.79142105547362,
+     "passed": true,
+     "resolved": false,
+     "aborted": false
+    },
+    {
+     "streams": 28,
+     "attainment": 0.8289473684210527,
+     "attainment_lower": 0.8096844464957976,
+     "attainment_upper": 0.8466298935414537,
+     "determined_requests": 1596,
+     "goodput": 52.91029215707006,
+     "passed": false,
+     "resolved": true,
+     "aborted": false
+    }
+   ],
+   "best_passing_streams": 24,
+   "lowest_failing_streams": 28,
+   "stop_reason": "converged"
+  }
+ ],
+ "benchmarks": [
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 1,
+     "max_concurrency": 1,
+     "streams": 1,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.004235982894897,
+   "warmup_duration": 4.9957640171051025,
+   "metrics": {
+    "request_totals": {
+     "successful": 67,
+     "errored": 0,
+     "incomplete": 1,
+     "total": 68
+    },
+    "slo_attainment": 1.0,
+    "slo_determined_requests": 67,
+    "requests_per_second": {
+     "successful": {
+      "mean": 2.6795459795625787
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 338.2226917785184
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 55.51004409790039
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 2.6353869851179947
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 29254.999999999996
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 8576.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 2,
+     "max_concurrency": 2,
+     "streams": 2,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.00400185585022,
+   "warmup_duration": 4.99599814414978,
+   "metrics": {
+    "request_totals": {
+     "successful": 136,
+     "errored": 0,
+     "incomplete": 2,
+     "total": 138
+    },
+    "slo_attainment": 1.0,
+    "slo_determined_requests": 136,
+    "requests_per_second": {
+     "successful": {
+      "mean": 5.439129335537938
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 686.3301362291661
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 51.325321197509766
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 2.8187871917964906
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 59241.99999999999
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 17408.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 4,
+     "max_concurrency": 4,
+     "streams": 4,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.002388954162598,
+   "warmup_duration": 4.997611045837402,
+   "metrics": {
+    "request_totals": {
+     "successful": 264,
+     "errored": 0,
+     "incomplete": 4,
+     "total": 268
+    },
+    "slo_attainment": 0.9962121212121212,
+    "slo_determined_requests": 264,
+    "requests_per_second": {
+     "successful": {
+      "mean": 10.5589910021797
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 1351.070894142539
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 53.2379150390625
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 5.017023386917715
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 115405.99999999999
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 33792.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 8,
+     "max_concurrency": 8,
+     "streams": 8,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.0027859210968,
+   "warmup_duration": 4.997214078903198,
+   "metrics": {
+    "request_totals": {
+     "successful": 536,
+     "errored": 0,
+     "incomplete": 8,
+     "total": 544
+    },
+    "slo_attainment": 1.0,
+    "slo_determined_requests": 536,
+    "requests_per_second": {
+     "successful": {
+      "mean": 21.43761106028328
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 2722.8565734571375
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 51.670074462890625
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 2.7306323915015995
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 233589.0
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 68608.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 10,
+     "max_concurrency": 16,
+     "streams": 16,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.002620935440063,
+   "warmup_duration": 4.9973790645599365,
+   "metrics": {
+    "request_totals": {
+     "successful": 992,
+     "errored": 0,
+     "incomplete": 0,
+     "total": 992
+    },
+    "slo_attainment": 0.9929435483870968,
+    "slo_determined_requests": 992,
+    "requests_per_second": {
+     "successful": {
+      "mean": 39.03590757625594
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 5060.909427324919
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 66.37692451477051
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 3.0058556654321866
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 431547.0
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 126976.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 10,
+     "max_concurrency": 32,
+     "streams": 32,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.00394892692566,
+   "warmup_duration": 4.996051073074341,
+   "metrics": {
+    "request_totals": {
+     "successful": 1671,
+     "errored": 0,
+     "incomplete": 32,
+     "total": 1703
+    },
+    "slo_attainment": 0.7995212447636146,
+    "slo_determined_requests": 1671,
+    "requests_per_second": {
+     "successful": {
+      "mean": 66.82944381639547
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 8534.731878699236
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 206.77590370178223
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 5.759826795322689
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 726745.9999999999
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 213888.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 10,
+     "max_concurrency": 24,
+     "streams": 24,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.003648042678833,
+   "warmup_duration": 4.996351957321167,
+   "metrics": {
+    "request_totals": {
+     "successful": 1536,
+     "errored": 0,
+     "incomplete": 24,
+     "total": 1560
+    },
+    "slo_attainment": 0.95703125,
+    "slo_determined_requests": 1536,
+    "requests_per_second": {
+     "successful": {
+      "mean": 61.431035878372434
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 7863.132598267687
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 116.21570587158203
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 3.280874312393309
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 668163.0
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 196608.0
+     }
+    }
+   }
+  },
+  {
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 10,
+     "max_concurrency": 28,
+     "streams": 28,
+     "rampup_duration": 0.0
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
+    }
+   },
+   "duration": 25.004586935043335,
+   "warmup_duration": 4.995413064956665,
+   "metrics": {
+    "request_totals": {
+     "successful": 1596,
+     "errored": 0,
+     "incomplete": 28,
+     "total": 1624
+    },
+    "slo_attainment": 0.8289473684210527,
+    "slo_determined_requests": 1596,
+    "requests_per_second": {
+     "successful": {
+      "mean": 63.82828895138611
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 8154.70379613558
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 122.17521667480469
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 3.5448337164450816
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 694482.9999999999
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 204288.0
+     }
+    }
+   }
+  }
+ ]
+}

@@ -14,10 +14,10 @@
 
 ## Global Constraints
 
-- 기존 테스트 295개가 모든 태스크 끝에서 그대로 통과한다. 칩 설정으로 옮긴 뒤 NVIDIA 동작은 바뀌지 않는다.
+- 기존 테스트 295개가 모든 태스크 끝에서 그대로 통과한다 (예외: Task G가 R21에 따라 고정 단계 시험 test_stages_for*·test_runner_writes_record_and_capacity를 goodput 탐색 시험으로 바꿈). 칩 설정으로 옮긴 뒤 NVIDIA 동작은 바뀌지 않는다.
 - 사용자에게 보이는 문구와 오류는 한국어. 설정 파일 오류에는 칸 이름을 넣는다.
 - 칩 설정 파일 형식: 스펙 3.2절의 칸 이름(`name, vendor, detect, engines, docker, kubernetes.resource, telemetry.{power_watts, exporter_image, metrics.{utilization,power,memory_used,temperature}}, export.{llmd,kserve}`)을 그대로 쓴다.
-- 부하 시험: 동시 사용자 1, 5, 10, 20명, 단계당 15초. 최대 사용자 기본 20, 상한 100. 한 번에 하나만. 기록은 `runs/loadtests/<YYYYmmdd-HHMMSS>.json`.
+- 부하 시험(R21·R22로 바뀜): guidellm goodput 탐색 — 동시 사용자 1명부터 두 배씩, 실패하면 반씩 좁힘(허용 폭 20 %), 단계마다 30초(처음 5초 워밍업 제외), 최대 10단계, 최대 사용자(기본 20, 상한 100)까지. 목표: 요청 95 %가 첫 글자 목표 안. 그다음 통과 수준에서 잰 요청 속도의 75 %로 60초 포아송 확인, 실패하면 낮은 통과 수준으로 내려가며 최대 3번. 한 번에 하나만. 기록은 runs/loadtests/<YYYYmmdd-HHMMSS>.json.
 - 첫 글자 목표 기본 1000 ms. 용량 기간 1시간, 경계 90 %.
 - 자동 증감 기본값: 늘리기 = 사용률 ≥ 80 % 2분 지속 또는 대기 > 0 2분 지속, 줄이기 = 사용률 ≤ 30 % 10분 지속 이고 대기 0, 유휴 복제본(5분 처리 0)이 있고 하나 줄였을 때 예상 사용률 ≤ 60 %이면 줄이기. 늘린 뒤 5분·줄인 뒤 10분 쿨다운. 한 번에 1개. 최소 1개, 최대 `max_replicas`. 새 복제본이 ready가 아니면 결정하지 않는다. 기본 켜짐.
 - 메모리 나누기: 자동 증감을 켜면 `--gpu-memory-utilization = floor(0.85 / max_replicas, 2자리)`로 고정. 끄면 `floor(0.85 / replicas, 2자리)`.

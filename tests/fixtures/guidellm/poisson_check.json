@@ -7,57 +7,63 @@
      "type_": "poisson",
      "worker_count": 10,
      "max_concurrency": 10240,
-     "rate": 192.5,
+     "rate": 29.76,
      "random_seed": 42
     },
     "slo": {
      "ttft_ms": 80.0,
      "tpot_ms": null,
      "e2el_ms": null
+    },
+    "warmup": {
+     "percent": null,
+     "value": 5,
+     "mode": "prefer_duration"
     }
    },
-   "duration": 8.0,
+   "duration": 55.03685903549194,
+   "warmup_duration": 4.963140964508057,
    "metrics": {
     "request_totals": {
-     "successful": 1519,
+     "successful": 1725,
      "errored": 0,
-     "incomplete": 28,
-     "total": 1547
+     "incomplete": 3,
+     "total": 1728
     },
-    "slo_attainment": 0.7531270572745227,
-    "slo_determined_requests": 1519,
+    "slo_attainment": 0.855072463768116,
+    "slo_determined_requests": 1725,
     "requests_per_second": {
      "successful": {
-      "mean": 189.5
+      "mean": 31.324462009872953
      }
     },
     "output_tokens_per_second": {
      "successful": {
-      "mean": 6074.875
+      "mean": 3921.02681333677
      }
     },
     "time_to_first_token_ms": {
      "successful": {
       "percentiles": {
-       "p99": 239.38918113708496
+       "p99": 1352.797269821167
       }
      }
     },
     "inter_token_latency_ms": {
      "successful": {
       "percentiles": {
-       "p99": 13.504389793642106
+       "p99": 34.949567374282
       }
      }
     },
     "prompt_token_count": {
      "successful": {
-      "total_sum": 163343.0
+      "total_sum": 750441.9999999999
      }
     },
     "output_token_count": {
      "successful": {
-      "total_sum": 48608.0
+      "total_sum": 220800.0
      }
     }
    }

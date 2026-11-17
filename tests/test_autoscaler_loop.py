@@ -301,3 +301,9 @@ def test_record_that_failed_the_open_loop_check_is_not_used():
     d, _ = tick(k8s, FakeProm(tpm=900.0), State(), Rules(), T0, NS)
     assert d.action == "hold"
     assert d.reason == "용량 기록 확인 실패: 복제본 1개 부하 시험 다시 필요"
+
+
+def test_null_record_holds_as_missing():
+    null = REC.model_copy(update={"max_tokens_per_min": None, "method": "goodput"})
+    d, _ = tick(FakeK8s(record=null), FakeProm(tpm=900.0), State(), Rules(), T0, NS)
+    assert d.reason == "용량 기록 없음: 복제본 1개 부하 시험 필요"

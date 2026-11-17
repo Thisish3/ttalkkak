@@ -4,7 +4,8 @@ Usage: .venv/bin/python scripts/fake_console.py WORKDIR [--port 8765]
 
 WORKDIR/console-token is created on first start. WORKDIR/control.json is read on
 every request so a scenario can change while the app is open:
-  {"capacity": true,        # false -> needs_loadtest, "unconfirmed" -> 확인 실패
+  {"capacity": true,        # false -> needs_loadtest, "unconfirmed" -> 확인 실패,
+                            # "attempt" -> confirmed record + newer unconfirmed attempt
    "recent_429": 0,         # gateway log rows with status 429 in the last seconds
    "decisions": []}         # extra AUTOSCALE log rows: {"t","action","from_replicas",...}
 """
@@ -132,6 +133,12 @@ def capacity_json(state, now: datetime) -> str:
         "stop_reason": "converged",
         "capacity_streams": 12,
         "confirmed": state != "unconfirmed",
+        "unconfirmed_attempt": {
+            "loadtest_id": "20261115-090000",
+            "created_at": (now - timedelta(days=1)).isoformat(),
+        }
+        if state == "attempt"
+        else None,
         "confirm_rate_rps": 2.4,
         "knee_streams": 10.5,
         "knee_output_tok_s": 820.0,
@@ -146,6 +153,7 @@ def _probe(users, attainment, lower, upper, passed, resolved):
         "error_rate": 0.0, "request_rate": min(0.22 * users, 2.7),
         "attainment": attainment, "attainment_lower": lower, "attainment_upper": upper,
         "determined_requests": 150, "passed": passed, "resolved": resolved, "aborted": False,
+        "duration_s": 25.0,
     }  # fmt: skip
 
 
@@ -167,32 +175,34 @@ def seed_loadtests(work: Path, now: datetime) -> None:
         "rate_rps": 1.98, "achieved_rps": 1.97, "attainment": 0.986,
         "attainment_lower": 0.971, "attainment_upper": 0.993, "determined_requests": 118,
         "error_rate": 0.0, "tokens_per_min": 17500.0, "ttft_p99_ms": 880.0,
-        "held": True, "resolved": True,
+        "held": True, "resolved": True, "users": 10,
     }  # fmt: skip
+    miss = {**confirm, "attainment": 0.79, "attainment_lower": 0.71,
+            "attainment_upper": 0.85, "held": False}  # fmt: skip
     base = {
         "model": MODEL, "autoscale_on": False, "method": "goodput", "max_users": 20,
         "ttft_target_ms": 1000, "itl_target_ms": None, "target_attainment": 0.95,
         "phase": "done", "stages": probes, "stop_reason": "converged",
         "best_passing_streams": 12, "lowest_failing_streams": 11,
-        "capacity_streams": 10, "capacity_tpm": 18000.0, "no_capacity_reason": None,
-        "confirm": confirm, "error": None,
+        "capacity_streams": 10, "capacity_tpm": 17500.0, "no_capacity_reason": None,
+        "probe_now": None, "confirms": [confirm], "error": None,
         "knee": {"status": "ok", "streams": 10.5, "output_tok_s": 770.0, "points": 8,
-                 "reason": None},
+                 "low_confidence": False, "reason": None},
     }  # fmt: skip
     runs = [
         {**base, "id": "20261114-031000", "replicas": 2},
         {
-            **base, "id": "20261115-090000", "replicas": 1,
-            "confirm": {**confirm, "attainment": 0.79, "attainment_lower": 0.71,
-                        "attainment_upper": 0.85, "held": False},
+            **base, "id": "20261115-090000", "replicas": 1, "capacity_tpm": 18000.0,
+            "confirms": [miss, {**miss, "users": 8, "rate_rps": 1.6},
+                         {**miss, "users": 4, "rate_rps": 0.8}],
         },
         {
             **base, "id": "20261116-100000", "replicas": 3, "stages": probes[:1],
             "stop_reason": "indeterminate_at_minimum", "best_passing_streams": None,
             "lowest_failing_streams": 1, "capacity_streams": None, "capacity_tpm": None,
-            "confirm": None,
+            "confirms": [],
             "knee": {"status": "no_knee", "streams": None, "output_tok_s": None,
-                     "points": 1, "reason": "동시 사용자 단계가 1개라 무릎을 계산하지 않았습니다 (최소 5개)"},
+                     "points": 1, "low_confidence": False, "reason": "동시 사용자 단계가 1개라 무릎을 계산하지 않았습니다 (최소 5개)"},
             "no_capacity_reason": "요청 수가 적어 가장 낮은 단계에서도 목표 달성 여부를 판정할 수 없습니다. 단계 시간을 늘려 다시 시험하세요",
         },
     ]  # fmt: skip
@@ -201,7 +211,9 @@ def seed_loadtests(work: Path, now: datetime) -> None:
         if not path.exists():
             created = now - timedelta(days=len(runs) - i)
             path.write_text(
-                json.dumps({**run, "created_at": created.isoformat()}, ensure_ascii=False),
+                json.dumps(
+                    {**run, "created_at": created.isoformat()}, ensure_ascii=False
+                ),
                 encoding="utf-8",
             )
 

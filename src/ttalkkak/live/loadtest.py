@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -14,6 +15,7 @@ from ttalkkak.capacity import (
     CapacityRecord,
     capacity_from_search,
     merge_capacity,
+    passing_levels,
 )
 from ttalkkak.cost.runner import (
     goodput_cmd,
@@ -26,17 +28,55 @@ from ttalkkak.errors import TtalkkakError
 
 MAX_USERS = 100
 TARGET_ATTAINMENT = 0.95
-PROBE_SECONDS = 60
-PROBE_REQUESTS = 150
-MAX_PROBES = 12
-# Open-loop check at 90 % of the request rate measured at the capacity level:
-# Poisson arrivals are burstier than a closed loop, so the full rate would test
-# a level the search never claimed.
-CONFIRM_FACTOR = 0.9
+# Each probe is a sustained window: 30 s, of which guidellm discards the first
+# 5 s as warmup, so 25 s are measured. 10 probes bound the search at ~5 min.
+PROBE_SECONDS = 30
+WARMUP_SECONDS = 5
+MAX_PROBES = 10
+# guidellm stops bisecting once the bracket is within 20 % of the best level.
+SEARCH_TOLERANCE = 0.2
+# The open-loop check runs at 75 % of the successful request rate measured at
+# the level: a 25 % margin, larger than the search tolerance, so the check rate
+# is below the edge the search could not resolve further.
+CONFIRM_FACTOR = 0.75
 CONFIRM_SECONDS = 60
+# On a miss the check steps down to the next lower passing level, at most
+# this many check runs in total.
+MAX_CONFIRMS = 3
 DATA = "kind=synthetic_text,prompt_tokens=256,output_tokens=128"
 TEST_ID = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?$")
 CAPACITY_CONFIGMAP = "ttalkkak-capacity"
+
+
+log = logging.getLogger(__name__)
+STRATEGY_LINE = re.compile(r"Starting benchmark for strategy: concurrent@(\d+)")
+
+
+def stream_run(cmd: list[str], *, check: bool, timeout: float, on_line=None):
+    """subprocess.run that hands each output line to on_line as it arrives."""
+    timed_out = threading.Event()
+    with subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+    ) as proc:
+
+        def kill():
+            timed_out.set()
+            proc.kill()
+
+        timer = threading.Timer(timeout, kill)
+        timer.start()
+        try:
+            for line in proc.stdout:
+                if on_line is not None:
+                    on_line(line)
+            rc = proc.wait()
+        finally:
+            timer.cancel()
+    if timed_out.is_set():
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    if check and rc != 0:
+        raise subprocess.CalledProcessError(rc, cmd)
+    return subprocess.CompletedProcess(cmd, rc)
 
 
 def check_max_users(max_users: int) -> None:
@@ -51,7 +91,7 @@ class LoadTestRunner:
         store,
         gateway_url: str,
         model: str,
-        run=subprocess.run,
+        run=stream_run,
         now=lambda: datetime.now(UTC),
         kubectl=None,
         namespace: str = "ttalkkak",
@@ -118,7 +158,8 @@ class LoadTestRunner:
             "capacity_streams": None,
             "capacity_tpm": None,
             "no_capacity_reason": None,
-            "confirm": None,
+            "probe_now": None,
+            "confirms": [],
             "knee": None,
             "error": None,
         }
@@ -170,26 +211,19 @@ class LoadTestRunner:
             key = self._issue_key()
             prefix = key[: len(f"tk_{LOADTEST_TENANT}_") + 8]
             probes, search = parse_goodput(
-                self._guidellm(record["id"], "search", key, record["max_users"])
+                self._guidellm(record, "search", key, record["max_users"])
             )
+            record["probe_now"] = None
             record["stages"] = [p.model_dump() for p in probes]
             record.update(search)
-            record["knee"] = throughput_knee(probes)
+            record["knee"] = self._knee(probes)
             best, why = capacity_from_search(probes, search["stop_reason"])
             record["no_capacity_reason"] = why
             if best is not None:
-                record["capacity_streams"] = best.users
-                record["capacity_tpm"] = best.tokens_per_min
                 record["phase"] = "confirm"
-                self._save(record)
-                rate = round(best.request_rate * CONFIRM_FACTOR, 3)
-                report = self._guidellm(record["id"], "confirm", key, rate)
-                record["confirm"] = {
-                    **parse_confirm(report, self.target_attainment),
-                    "rate_rps": rate,
-                }
-                if not record["autoscale_on"]:
-                    self._write_capacity(record, created)
+                self._confirm(record, key, passing_levels(probes))
+            if not record["autoscale_on"]:
+                self._write_capacity(record, created)
             record["phase"] = "done"
         except subprocess.CalledProcessError as err:
             record["error"] = f"guidellm이 실패했습니다 (종료 코드 {err.returncode})"
@@ -212,6 +246,33 @@ class LoadTestRunner:
             finally:
                 self._active = None
 
+    def _knee(self, probes) -> dict | None:
+        try:
+            return throughput_knee(probes)
+        except Exception:  # the knee is extra; never fail the test
+            log.exception("knee analysis failed")
+            return None
+
+    def _confirm(self, record: dict, key: str, levels: list) -> None:
+        """Open-loop check from the highest passing level down until one holds."""
+        for level in levels[:MAX_CONFIRMS]:
+            rate = round(level.request_rate * CONFIRM_FACTOR, 3)
+            record["capacity_streams"] = level.users
+            self._save(record)
+            report = self._guidellm(record, "confirm", key, rate)
+            check = {
+                **parse_confirm(report, self.target_attainment),
+                "rate_rps": rate,
+                "users": level.users,
+            }
+            record["confirms"].append(check)
+            if check["held"]:
+                record["capacity_tpm"] = check["tokens_per_min"]
+                return
+        top = levels[0]
+        record["capacity_streams"] = top.users
+        record["capacity_tpm"] = top.tokens_per_min
+
     def _issue_key(self) -> str:
         if LOADTEST_TENANT not in {t.id for t in self.store.list_tenants()}:
             self.store.add_tenant(LOADTEST_TENANT, "ttalkkak load test")
@@ -220,11 +281,12 @@ class LoadTestRunner:
     def _revoke(self, prefix: str) -> None:
         self.store.revoke_key(prefix)
 
-    def _guidellm(self, test_id: str, kind: str, key: str, arg) -> dict:
+    def _guidellm(self, record: dict, kind: str, key: str, arg) -> dict:
         """Run the search (arg = max users) or the open-loop check (arg = rate)."""
         work = self.dir / "stages"
         work.mkdir(parents=True, exist_ok=True)
-        out = work / f"{test_id}-{kind}.guidellm.json"
+        out = work / f"{record['id']}-{kind}.guidellm.json"
+        on_line = None
         common = {
             "ttft_ms": self.ttft_target_ms,
             "itl_ms": self.itl_target_ms,
@@ -234,18 +296,27 @@ class LoadTestRunner:
             cmd = goodput_cmd(
                 self.gateway_url, self.model, DATA, out, **common,
                 attainment=self.target_attainment, max_streams=arg,
-                probe_seconds=PROBE_SECONDS, probe_requests=PROBE_REQUESTS,
-                max_probes=MAX_PROBES,
+                probe_seconds=PROBE_SECONDS, warmup_seconds=WARMUP_SECONDS,
+                tolerance=SEARCH_TOLERANCE, max_probes=MAX_PROBES,
             )  # fmt: skip
             timeout = MAX_PROBES * (PROBE_SECONDS + 30) + 300
+
+            def on_line(line: str) -> None:
+                m = STRATEGY_LINE.search(line)
+                if m:
+                    done = (record["probe_now"] or {}).get("index", 0)
+                    record["probe_now"] = {
+                        "users": int(m.group(1)), "index": done + 1, "max": MAX_PROBES,
+                    }  # fmt: skip
+                    self._save(record)
         else:
             cmd = poisson_cmd(
                 self.gateway_url, self.model, DATA, out, **common,
-                rate=arg, seconds=CONFIRM_SECONDS,
+                rate=arg, seconds=CONFIRM_SECONDS, warmup_seconds=WARMUP_SECONDS,
             )  # fmt: skip
             timeout = CONFIRM_SECONDS * 4 + 300
         try:
-            self.run(cmd, check=True, timeout=timeout)
+            self.run(cmd, check=True, timeout=timeout, on_line=on_line)
             return json.loads(out.read_text(encoding="utf-8"))
         finally:
             out.unlink(missing_ok=True)
@@ -253,7 +324,8 @@ class LoadTestRunner:
     def _write_capacity(self, record: dict, created: datetime) -> None:
         if self.kubectl is None:
             raise TtalkkakError("kubectl이 없어 용량 기록을 저장하지 못했습니다")
-        confirm, knee = record["confirm"], record["knee"] or {}
+        checks, knee = record["confirms"], record["knee"] or {}
+        held = [c for c in checks if c["held"]]
         cap = CapacityRecord(
             loadtest_id=record["id"],
             created_at=created,
@@ -266,8 +338,8 @@ class LoadTestRunner:
             itl_target_ms=self.itl_target_ms,
             stop_reason=record["stop_reason"],
             capacity_streams=record["capacity_streams"],
-            confirmed=confirm["held"],
-            confirm_rate_rps=confirm["rate_rps"],
+            confirmed=bool(held) if checks else None,
+            confirm_rate_rps=(held or checks or [{}])[-1].get("rate_rps"),
             knee_streams=knee.get("streams"),
             knee_output_tok_s=knee.get("output_tok_s"),
         )

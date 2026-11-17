@@ -297,6 +297,10 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   const gp = base(); Object.assign(gp.capacity.source, { ttft_target_ms: 1000, target_attainment: 0.95 });
   render(gp);
   has("live-gauge", "요청 95 %"); has("live-gauge", "첫 글자 ≤ 1초");
+  const at = base(); Object.assign(at.capacity.source, { target_attainment: 0.95, ttft_target_ms: 1000,
+    unconfirmed_attempt: { loadtest_id: "20261117-020000" + EVIL, created_at: "2026-11-17T02:00:00+00:00" } });
+  render(at);
+  has("live-gauge", "더 새 부하 시험"); has("live-gauge", "확인을 통과하지 못해"); has("live-gauge", "&lt;img");
   const uc = base();
   Object.assign(uc.capacity, { state: "unconfirmed", pct: null, max_tpm: null, source: null, missing_text: "부하 시험 필요: 2개(확인 실패) " + EVIL });
   render(uc);
@@ -315,8 +319,10 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
              probe(3, 0.949, 0.924, 0.966, false, false), probe(8, 0.99, 0.95, 1, true, true, true)],
     stop_reason: "converged", best_passing_streams: 2, lowest_failing_streams: 3, capacity_streams: 2, capacity_tpm: 2000,
     no_capacity_reason: null,
-    confirm: { rate_rps: 1.8, achieved_rps: 1.79, attainment: 0.7531, attainment_lower: 0.731, attainment_upper: 0.774,
-               determined_requests: 1519, error_rate: 0, ttft_p99_ms: 239, held: false, resolved: true },
+    confirms: [{ users: 2, rate_rps: 1.8, achieved_rps: 1.79, attainment: 0.7531, attainment_lower: 0.731, attainment_upper: 0.774,
+               determined_requests: 1519, error_rate: 0, ttft_p99_ms: 239, tokens_per_min: 1500, held: false, resolved: true },
+               { users: 1, rate_rps: 0.9, achieved_rps: 0.9, attainment: 0.6, attainment_lower: 0.5, attainment_upper: 0.7,
+               determined_requests: 50, error_rate: 0, ttft_p99_ms: 900, tokens_per_min: 700, held: false, resolved: true }],
     knee: { status: "ok", streams: 2.6, output_tok_s: 150, points: 5, reason: null },
   };
   put("GRUNS", [gRun]);
@@ -327,6 +333,10 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   has("lt-list", "98.6 %"); has("lt-list", "92.3–99.7 %");
   has("lt-list", "통과"); has("lt-list", "실패"); has("lt-list", "모름"); has("lt-list", "중단됨");
   has("lt-list", "수렴"); has("lt-list", "확인 실패"); has("lt-list", "75.3 %"); has("lt-list", "1.8 요청/초");
+  // fix round 1: every step-down check is listed with its level; error column; target in 초
+  has("lt-list", "확인 1 · 동시 사용자 2명"); has("lt-list", "확인 2 · 동시 사용자 1명"); has("lt-list", "오류율");
+  has("lt-list", "첫 글자 ≤ 1초"); hasNot("lt-list", "1.0초");
+  if (!els["lt-chart"].innerHTML.includes("▲ 목표 1초")) fail("chart lacks the configured target line");
   has("lt-list", "무릎"); has("lt-list", "2.6명"); has("lt-list", "2,000 토큰/분"); has("lt-list", "동시 사용자 2명");
   hasNot("lt-list", "undefined"); hasNot("lt-list", "NaN"); hasNot("lt-list", "null");
   // chart draws probes sorted by users even though they ran out of order
@@ -334,18 +344,24 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   if (xs.some((x, i) => i && x < xs[i - 1])) fail("chart polyline not sorted by users: " + xs);
 
   // held confirm, no knee, indeterminate search, unknown stop reason, hostile strings
-  const held = { ...gRun, id: "b", confirm: { ...gRun.confirm, held: true, attainment: 0.99 }, knee: { status: "no_knee", streams: null, output_tok_s: null, points: 4, reason: "동시 사용자 단계가 4개라 " + EVIL } };
-  const indet = { ...gRun, id: "c", stop_reason: "indeterminate_at_minimum", capacity_tpm: null, capacity_streams: null, confirm: null, knee: null,
+  const held = { ...gRun, id: "b", confirms: [gRun.confirms[0], { ...gRun.confirms[1], held: true, attainment: 0.99 }], knee: { status: "no_knee", streams: null, output_tok_s: null, points: 4, reason: "동시 사용자 단계가 4개라 " + EVIL } };
+  const indet = { ...gRun, id: "c", stop_reason: "indeterminate_at_minimum", capacity_tpm: null, capacity_streams: null, confirms: [], knee: null,
     no_capacity_reason: "판정할 수 없습니다 " + EVIL };
   const odd2 = { ...gRun, id: "d", stop_reason: EVIL, stages: [{ ...probe(1, 1, 1, 1, true, true), attainment: null, attainment_lower: null }] };
+  const errp = { ...gRun, id: "e", ttft_target_ms: 500, stages: [{ ...probe(4, 1, 0.97, 1, true, true), error_rate: 0.02 }],
+    knee: { ...gRun.knee, low_confidence: true } };
+  put("ERRP", [errp]);
+  run("renderLoadtests(ERRP)");
+  has("lt-list", "오류로 제외"); has("lt-list", "2.0 %"); has("lt-list", "신뢰 낮음");
+  has("lt-chart", "▲ 목표 0.5초"); has("lt-chart", "첫 글자 0.5초 목표");
   put("GRUNS2", [held, indet, odd2]);
   run("renderLoadtests(GRUNS2)");
   has("lt-list", "확인 통과"); has("lt-list", "무릎 없음"); has("lt-list", "판정 불가"); has("lt-list", "판정할 수 없습니다");
   has("lt-list", "&lt;img"); hasNot("lt-list", "<img"); hasNot("lt-list", "NaN"); hasNot("lt-list", "undefined");
   // progress shows the phase while guidellm runs
-  put("PROG", [{ ...gRun, running: true, phase: "search", stages: [] }]);
+  put("PROG", [{ ...gRun, running: true, phase: "search", stages: [], probe_now: { users: 4, index: 3, max: 10 } }]);
   run("renderLoadtests(PROG)");
-  has("lt-progress", "용량 찾는 중");
+  has("lt-progress", "용량 찾는 중"); has("lt-progress", "동시 사용자 4명 · 3/10"); hasNot("lt-progress", "끝낸 단계");
   put("PROG", [{ ...gRun, running: true, phase: "confirm" }]);
   run("renderLoadtests(PROG)");
   has("lt-progress", "열린 부하로 확인 중");

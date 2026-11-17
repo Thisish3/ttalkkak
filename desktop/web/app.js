@@ -603,6 +603,7 @@ function card(id, fn, cols) {
 const num = (n, d = 0) =>
   typeof n === "number" && isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "-";
 const pctText = (n) => (typeof n === "number" ? `${num(n)} %` : "-");
+const secText = (ms) => (typeof ms === "number" && isFinite(ms) ? `${num(ms / 1000, ms % 1000 ? 1 : 0)}초` : "-");
 const LEVEL_ICON = { ok: "●", warn: "▲", bad: "✕", mut: "–" };
 const level = (p, warn, bad) => (p == null ? "mut" : p >= bad ? "bad" : p >= warn ? "warn" : "ok");
 const timeText = (t) => {
@@ -667,13 +668,14 @@ function liveGauge(c, errors) {
   if (c.state !== "ok") return errorBox(`용량 상태를 알 수 없습니다: ${c.state}`);
   const missing = c.missing_text ? `<div class="cap">▲ ${esc(c.missing_text)}</div>` : "";
   const src = c.source || {};
-  const secs = (ms) => `${num(ms / 1000, ms % 1000 ? 1 : 0)}초`;
   const target = typeof src.ttft_target_ms !== "number" ? ""
-    : typeof src.target_attainment === "number" ? `, 요청 ${num(src.target_attainment * 100)} %가 첫 글자 ≤ ${secs(src.ttft_target_ms)}`
-    : `, 첫 글자 p99 ≤ ${secs(src.ttft_target_ms)}`;
+    : typeof src.target_attainment === "number" ? `, 요청 ${num(src.target_attainment * 100)} %가 첫 글자 ≤ ${secText(src.ttft_target_ms)}`
+    : `, 첫 글자 p99 ≤ ${secText(src.ttft_target_ms)}`;
+  const att = src.unconfirmed_attempt;
+  const attempt = att ? `<div class="cap">▲ 더 새 부하 시험(${esc(att.loadtest_id)}, ${dateTimeText(att.created_at)})은 열린 부하 확인을 통과하지 못해 이 기록을 그대로 씁니다</div>` : "";
   return `<div class="row">${gaugeSvg(c.pct)}<div><div class="lab">용량 사용률</div>
     <div class="cap">지금 <b>${num(c.now_tpm)}</b> 토큰/분<br>÷ 최대 <b>${num(c.max_tpm)}</b> 토큰/분<br>
-    최대 = 부하 시험(${dateTimeText(src.created_at)}, 복제본 ${esc(src.replicas)}개${esc(target)})<br>100 %에 가까우면 거절(429)이 늘어납니다</div>${missing}</div></div>`;
+    최대 = 부하 시험(${dateTimeText(src.created_at)}, 복제본 ${esc(src.replicas)}개${esc(target)})<br>100 %에 가까우면 거절(429)이 늘어납니다</div>${attempt}${missing}</div></div>`;
 }
 
 function livePeriod(c, errors) {
@@ -769,7 +771,8 @@ function loadtestChart(runs) {
   if (!shown.length) return "";
   const W = 360, H = 170, L = 38, B = 22, T = 8, R = 8;
   const users = Math.max(...shown.flatMap((r) => r.stages.map((x) => x.users)));
-  const top = Math.max(1000, ...shown.flatMap((r) => r.stages.map((x) => x.ttft_p99_ms)));
+  const goal = typeof shown[0].ttft_target_ms === "number" && shown[0].ttft_target_ms > 0 ? shown[0].ttft_target_ms : 1000;
+  const top = Math.max(goal, ...shown.flatMap((r) => r.stages.map((x) => x.ttft_p99_ms)));
   const X = (u) => L + (u / users) * (W - L - R), Y = (v) => H - B - (v / top) * (H - B - T);
   const lines = shown.map((r, i) => {
     const pts = r.stages.map((x) => `${X(x.users).toFixed(1)},${Y(x.ttft_p99_ms).toFixed(1)}`).join(" ");
@@ -780,10 +783,10 @@ function loadtestChart(runs) {
     `<span><svg viewBox="0 0 28 8" aria-hidden="true"><path d="M0 4h28" stroke="${LT_COLORS[i]}" stroke-dasharray="${LT_DASH[i]}"/></svg>${esc(r.id)} · 복제본 ${esc(r.replicas)}개${r.autoscale_on ? " · 자동 증감 켬" : ""}</span>`).join("");
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="동시 사용자 대 첫 글자 p99">
     <line class="axis" x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}"/><line class="axis" x1="${L}" x2="${L}" y1="${T}" y2="${Y(0)}"/>
-    <line class="edge" x1="${L}" x2="${W - R}" y1="${Y(1000)}" y2="${Y(1000)}"/><text class="edge-t" x="${W - R}" y="${Y(1000) - 3}" text-anchor="end">▲ 1초</text>
+    <line class="edge" x1="${L}" x2="${W - R}" y1="${Y(goal)}" y2="${Y(goal)}"/><text class="edge-t" x="${W - R}" y="${Y(goal) - 3}" text-anchor="end">▲ 목표 ${secText(goal)}</text>
     <text x="${L - 4}" y="${Y(0)}" text-anchor="end">0</text><text x="${L - 4}" y="${T + 8}" text-anchor="end">${num(top)} ms</text>
     <text x="${X(users)}" y="${H - 6}" text-anchor="end">동시 사용자 ${num(users)}명</text>${lines}</svg>
-    <div class="legend">${legend}</div><div class="mut">동시 사용자 대 첫 글자 p99 (ms)</div>`;
+    <div class="legend">${legend}</div><div class="mut">동시 사용자 대 첫 글자 p99 (ms) · 선 = 첫 글자 ${secText(goal)} 목표</div>`;
 }
 
 const STOP_REASON = {
@@ -799,6 +802,7 @@ const ratio = (x) => (typeof x === "number" && isFinite(x) ? `${num(x * 100, 1)}
 const span = (lo, hi) => (typeof lo === "number" && typeof hi === "number" ? `${num(lo * 100, 1)}–${num(hi * 100, 1)} %` : "-");
 
 function probeVerdict(p) {
+  if (p.passed && typeof p.error_rate === "number" && p.error_rate > 0) return badge("mut", "오류로 제외");
   if (!p.resolved) return badge("warn", p.passed ? "모름 (통과 쪽)" : "모름 (실패 쪽)");
   return p.passed ? badge("ok", "통과") : badge("bad", "실패");
 }
@@ -806,46 +810,53 @@ function probeVerdict(p) {
 function probeTable(r) {
   const rows = (r.stages || []).map((p, i) => `<tr><td class="num">${i + 1}</td><td class="num">${num(p.users)}명</td>
     <td class="num">${ratio(p.attainment)}</td><td class="num">${span(p.attainment_lower, p.attainment_upper)}</td>
-    <td>${probeVerdict(p)}</td><td>${p.aborted ? badge("mut", "중단됨") : "-"}</td><td class="num">${num(p.tokens_per_min)}</td></tr>`).join("");
+    <td>${probeVerdict(p)}</td><td class="num">${ratio(p.error_rate)}</td><td>${p.aborted ? badge("mut", "중단됨") : "-"}</td><td class="num">${num(p.tokens_per_min)}</td></tr>`).join("");
   if (!rows) return "";
-  return `<div class="tablewrap"><table><thead><tr><th>순서</th><th>동시 사용자</th><th>달성률</th><th>신뢰 구간</th><th>판정</th><th>중단</th><th>토큰/분</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="tablewrap"><table><thead><tr><th>순서</th><th>동시 사용자</th><th>달성률</th><th>신뢰 구간</th><th>판정</th><th>오류율</th><th>중단</th><th>토큰/분</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-function confirmText(c) {
-  if (!c) return "";
-  const head = c.held ? badge("ok", "확인 통과") : badge("bad", "확인 실패");
-  return `<div>${head} 열린 부하(포아송) ${num(c.rate_rps, 1)} 요청/초 · 달성률 ${ratio(c.attainment)} (${span(c.attainment_lower, c.attainment_upper)}) · 오류율 ${ratio(c.error_rate)} · 첫 글자 p99 ${num(c.ttft_p99_ms)} ms</div>`;
+function confirmText(checks) {
+  return (Array.isArray(checks) ? checks : []).map((c, i) => {
+    const head = c.held ? badge("ok", "확인 통과") : badge("bad", "확인 실패");
+    return `<div>${head} 확인 ${i + 1} · 동시 사용자 ${num(c.users)}명 수준 · 열린 부하(포아송) ${num(c.rate_rps, 1)} 요청/초 · 달성률 ${ratio(c.attainment)} (${span(c.attainment_lower, c.attainment_upper)}) · 오류율 ${ratio(c.error_rate)} · 첫 글자 p99 ${num(c.ttft_p99_ms)} ms · ${num(c.tokens_per_min)} 토큰/분</div>`;
+  }).join("");
 }
 
 function kneeText(k) {
   if (!k) return "";
-  if (k.status === "ok") return `<div>무릎(처리량이 꺾이는 곳): 동시 사용자 ${num(k.streams, 1)}명 · 출력 ${num(k.output_tok_s)} 토큰/초</div>`;
+  const low = k.low_confidence ? ` ${badge("warn", "신뢰 낮음: 단계 측정 시간이 짧음")}` : "";
+  if (k.status === "ok") return `<div>무릎(처리량이 꺾이는 곳): 동시 사용자 ${num(k.streams, 1)}명 · 출력 ${num(k.output_tok_s)} 토큰/초${low}</div>`;
   return `<div>무릎 없음: ${esc(k.reason || "처리량 곡선에서 무릎을 찾지 못했습니다")}</div>`;
 }
 
 function loadtestDetail(r, open) {
   if (r.method !== "goodput" || r.running) return "";
-  const target = `요청 ${num((r.target_attainment || 0) * 100)} %가 첫 글자 ≤ ${num((r.ttft_target_ms || 0) / 1000, 1)}초`;
+  const target = `요청 ${num((r.target_attainment || 0) * 100)} %가 첫 글자 ≤ ${secText(r.ttft_target_ms)}`;
   const cap = r.capacity_tpm == null
     ? `<div>${badge("mut", "용량 기록 없음")} ${esc(r.no_capacity_reason || "")}</div>`
     : `<div>용량: 동시 사용자 ${num(r.capacity_streams)}명에서 ${num(r.capacity_tpm)} 토큰/분</div>`;
   return `<details class="lt-detail"${open ? " open" : ""}><summary>탐색 ${(r.stages || []).length}회 · ${esc(STOP_REASON[r.stop_reason] || r.stop_reason || "-")}</summary>
-    <div class="mut">목표: ${esc(target)}</div>${cap}${confirmText(r.confirm)}${kneeText(r.knee)}${probeTable(r)}</details>`;
+    <div class="mut">목표: ${esc(target)}</div>${cap}${confirmText(r.confirms)}${kneeText(r.knee)}${probeTable(r)}</details>`;
 }
 
 function renderLoadtests(runs) {
   const running = runs.find((r) => r.running);
   live.ltRunning = Boolean(running);
   const phase = running && LT_PHASE[running.phase] ? ` · ${LT_PHASE[running.phase]}` : "";
+  const now = running && running.probe_now;
+  const step = !running ? ""
+    : running.phase === "search" ? (now ? ` · 지금 동시 사용자 ${num(now.users)}명 · ${num(now.index)}/${num(now.max)}` : " · 단계 결과는 탐색이 끝나면 한꺼번에 나옵니다")
+    : running.phase === "confirm" ? ` · 동시 사용자 ${num(running.capacity_streams)}명 수준 확인`
+    : ` · 끝낸 단계 ${(running.stages || []).map((x) => `${esc(x.users)}명`).join(", ") || "없음"}`;
   $("lt-progress").innerHTML = running
-    ? `<div class="infobox">▲ 진행 중: ${esc(running.id)} · 복제본 ${esc(running.replicas)}개${phase} · 끝낸 단계 ${(running.stages || []).map((x) => `${esc(x.users)}명`).join(", ") || "없음"}</div>`
+    ? `<div class="infobox">▲ 진행 중: ${esc(running.id)} · 복제본 ${esc(running.replicas)}개${phase}${step}</div>`
     : "";
   $("lt-start").disabled = Boolean(running);
   $("lt-chart").innerHTML = loadtestChart(runs);
   $("lt-list").innerHTML = runs.slice(0, 5).map((r, i) => {
     const st = r.error ? badge("bad", "오류: " + r.error) : r.running ? badge("warn", "진행 중")
       : r.capacity_tpm == null ? badge("mut", r.stop_reason === "indeterminate_at_minimum" ? "판정 불가" : "기준 만족 단계 없음")
-      : r.confirm && r.confirm.held === false ? badge("bad", "확인 실패") : badge("ok", "완료");
+      : Array.isArray(r.confirms) && r.confirms.length && !r.confirms.some((c) => c.held) ? badge("bad", "확인 실패") : badge("ok", "완료");
     const cap = r.capacity_tpm == null ? "-" : `${num(r.capacity_tpm)} 토큰/분`;
     return `<div class="row" style="margin-top:8px"><b>${esc(r.id)}</b><span class="mut">${dateTimeText(r.created_at)}</span><span>복제본 ${esc(r.replicas)}개 · 자동 증감 ${r.autoscale_on ? "켬" : "끔"}</span><span>${cap}</span>${st}</div>${loadtestDetail(r, i === 0)}`;
   }).join("") || emptyState("아직 부하 시험 기록이 없습니다");
@@ -981,7 +992,7 @@ async function startLoadtest() {
   try {
     const r = await mutate("/api/loadtest", { max_users: users, autoscale_on: on }, {
       title: "부하 시험 시작",
-      message: `guidellm이 동시 사용자를 1명부터 두 배씩 늘리다가(최대 ${users}명) 목표를 놓친 수준과 지킨 수준 사이를 반씩 좁힙니다. 단계마다 요청 150개나 60초 중 먼저 닿을 때까지, 최대 12단계를 돌린 뒤 찾은 수준의 90 % 속도로 60초 동안 열린 부하(포아송)를 한 번 더 보냅니다. 지금 떠 있는 복제본 전체가 GPU를 쓰고 일반 요청은 느려질 수 있습니다. ` +
+      message: `guidellm이 동시 사용자를 1명부터 두 배씩 늘리다가(최대 ${users}명) 목표를 놓친 수준과 지킨 수준 사이를 반씩 좁힙니다. 단계마다 30초(처음 5초는 측정에서 뺌)씩 최대 10단계를 돌린 뒤, 찾은 수준에서 잰 요청 속도의 75 %로 60초 동안 열린 부하(포아송)를 보냅니다. 확인에 실패하면 한 단계 낮은 수준으로 내려가며 최대 3번 확인합니다(최대 약 8분). 지금 떠 있는 복제본 전체가 GPU를 쓰고 일반 요청은 느려질 수 있습니다. ` +
         (on ? "자동 증감을 켠 채로 시험하므로 결과는 용량 기록에 저장되지 않습니다." : "끝나면 현재 복제본 수의 용량 기록으로 저장됩니다."),
       confirmText: "시작",
     });

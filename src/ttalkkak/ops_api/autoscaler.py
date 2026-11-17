@@ -138,7 +138,11 @@ def _sample(
         t=now, util_pct=pct, waiting=waiting, ready=ready, desired=desired,
         idle_replicas=idle,
     )  # fmt: skip
-    if record is None:
+    if (
+        record is None
+        or not record.max_tokens_per_min
+        or (model and record.model != model)
+    ):
         return sample, "missing"
     return sample, "unconfirmed" if record.confirmed is False else None
 

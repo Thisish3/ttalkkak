@@ -29,6 +29,7 @@ class Probe(Stage):
     passed: bool
     resolved: bool
     aborted: bool = False
+    duration_s: float | None = None
 
 
 class CapacityRecord(BaseModel):
@@ -47,6 +48,32 @@ class CapacityRecord(BaseModel):
     confirm_rate_rps: float | None = None
     knee_streams: float | None = None
     knee_output_tok_s: float | None = None
+    unconfirmed_attempt: dict | None = None
+
+    @property
+    def usable(self) -> bool:
+        """Has a capacity that did not fail the open-loop check."""
+        return bool(self.max_tokens_per_min) and self.confirmed is not False
+
+
+def keep_or_replace(old: CapacityRecord | None, new: CapacityRecord) -> CapacityRecord:
+    """Which record a new load-test result leaves for its replica count.
+
+    An unconfirmed result never replaces a usable record of the same model; it
+    is noted on that record instead. A result without capacity never erases a
+    usable record of another model.
+    """
+    if old is None or not old.usable:
+        return new
+    if new.confirmed is False and new.model == old.model:
+        attempt = {
+            "loadtest_id": new.loadtest_id,
+            "created_at": new.created_at.isoformat(),
+        }
+        return old.model_copy(update={"unconfirmed_attempt": attempt})
+    if not new.max_tokens_per_min and new.model != old.model:
+        return old
+    return new
 
 
 def parse_capacity(
@@ -77,7 +104,8 @@ def merge_capacity(
     raw: str | None, rec: CapacityRecord, namespace: str = "<네임스페이스>"
 ) -> str:
     """ConfigMap value with rec replacing only the entry for its replica count."""
-    records = {**parse_capacity(raw, namespace), rec.replicas: rec}
+    records = parse_capacity(raw, namespace)
+    records[rec.replicas] = keep_or_replace(records.get(rec.replicas), rec)
     return json.dumps(
         {str(n): json.loads(r.model_dump_json()) for n, r in sorted(records.items())}
     )
@@ -98,7 +126,7 @@ def missing_loadtest_counts(
     return [
         n
         for n in range(1, max_replicas + 1)
-        if n not in records or records[n].confirmed is False
+        if n not in records or not records[n].usable
     ]
 
 
@@ -109,7 +137,10 @@ def missing_loadtest_text(
     if not missing:
         return None
     return "부하 시험 필요: " + ", ".join(
-        f"{n}개(확인 실패)" if n in records else f"{n}개" for n in missing
+        f"{n}개(확인 실패)"
+        if n in records and records[n].confirmed is False
+        else f"{n}개"
+        for n in missing
     )
 
 
@@ -127,6 +158,16 @@ _NO_CAPACITY = {
 }
 
 
+def passing_levels(probes: list[Probe]) -> list[Probe]:
+    """Probes that passed with a resolved interval, no abort, no errors; high first."""
+    ok = [
+        p
+        for p in probes
+        if p.passed and p.resolved and not p.aborted and p.error_rate == 0
+    ]
+    return sorted(ok, key=lambda p: p.users, reverse=True)
+
+
 def capacity_from_search(
     probes: list[Probe], stop_reason: str | None
 ) -> tuple[Probe | None, str | None]:
@@ -137,13 +178,9 @@ def capacity_from_search(
     """
     if stop_reason in _NO_CAPACITY:
         return None, _NO_CAPACITY[stop_reason]
-    ok = [
-        p
-        for p in probes
-        if p.passed and p.resolved and not p.aborted and p.error_rate == 0
-    ]
+    ok = passing_levels(probes)
     if ok:
-        return max(ok, key=lambda p: p.users), None
+        return ok[0], None
     passed = [p for p in probes if p.passed and not p.aborted]
     if any(p.error_rate == 0 and not p.resolved for p in passed):
         return None, (
@@ -158,17 +195,11 @@ def capacity_from_search(
 def utilization(
     now_tpm: float, rec: CapacityRecord | None, replicas: int, model: str
 ) -> dict:
-    usable = (
-        rec is not None
-        and rec.confirmed is not False
-        and rec.max_tokens_per_min
-        and rec.replicas == replicas
-        and rec.model == model
-    )
-    if not usable:
+    matches = rec is not None and rec.replicas == replicas and rec.model == model
+    if not matches or not rec.usable:
         return {
             "state": "unconfirmed"
-            if rec is not None and rec.confirmed is False
+            if matches and rec.confirmed is False and rec.max_tokens_per_min
             else "needs_loadtest",
             "pct": None,
             "now_tpm": now_tpm,
@@ -190,6 +221,7 @@ def utilization(
             "capacity_streams": rec.capacity_streams,
             "confirmed": rec.confirmed,
             "knee_streams": rec.knee_streams,
+            "unconfirmed_attempt": rec.unconfirmed_attempt,
         },
     }
 
