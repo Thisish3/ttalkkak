@@ -1,4 +1,4 @@
-"""Console load test: guidellm in staged concurrent users, capacity record."""
+"""Console load test: guidellm's goodput search, an open-loop check, capacity."""
 
 from __future__ import annotations
 
@@ -12,28 +12,36 @@ from pathlib import Path
 from ttalkkak.capacity import (
     LOADTEST_TENANT,
     CapacityRecord,
-    Stage,
-    capacity_from_stages,
+    capacity_from_search,
     merge_capacity,
 )
-from ttalkkak.cost.runner import guidellm_cmd, parse_points, parse_stage_load
+from ttalkkak.cost.runner import (
+    goodput_cmd,
+    parse_confirm,
+    parse_goodput,
+    poisson_cmd,
+    throughput_knee,
+)
 from ttalkkak.errors import TtalkkakError
 
-STAGES = [1, 5, 10, 20]
-STAGE_SECONDS = 15
 MAX_USERS = 100
+TARGET_ATTAINMENT = 0.95
+PROBE_SECONDS = 60
+PROBE_REQUESTS = 150
+MAX_PROBES = 12
+# Open-loop check at 90 % of the request rate measured at the capacity level:
+# Poisson arrivals are burstier than a closed loop, so the full rate would test
+# a level the search never claimed.
+CONFIRM_FACTOR = 0.9
+CONFIRM_SECONDS = 60
 DATA = "kind=synthetic_text,prompt_tokens=256,output_tokens=128"
 TEST_ID = re.compile(r"^[0-9]{8}-[0-9]{6}(-[0-9]+)?$")
 CAPACITY_CONFIGMAP = "ttalkkak-capacity"
 
 
-def stages_for(max_users: int) -> list[int]:
+def check_max_users(max_users: int) -> None:
     if isinstance(max_users, bool) or not 1 <= max_users <= MAX_USERS:
         raise ValueError(f"최대 사용자 수는 1~{MAX_USERS}이어야 합니다")
-    stages = [s for s in STAGES if s <= max_users]
-    if max_users not in stages:
-        stages.append(max_users)
-    return stages
 
 
 class LoadTestRunner:
@@ -48,6 +56,8 @@ class LoadTestRunner:
         kubectl=None,
         namespace: str = "ttalkkak",
         ttft_target_ms: float = 1000,
+        itl_target_ms: float | None = None,
+        target_attainment: float = TARGET_ATTAINMENT,
         sync: bool = False,
     ):
         self.dir = Path(root) / "runs" / "loadtests"
@@ -59,6 +69,8 @@ class LoadTestRunner:
         self.kubectl = kubectl
         self.namespace = namespace
         self.ttft_target_ms = ttft_target_ms
+        self.itl_target_ms = itl_target_ms
+        self.target_attainment = target_attainment
         self.sync = sync
         self._lock = threading.Lock()
         self._active: str | None = None
@@ -74,7 +86,7 @@ class LoadTestRunner:
         autoscale_on: bool,
         model: str | None = None,
     ) -> str:
-        stages = stages_for(max_users)
+        check_max_users(max_users)
         with self._lock:
             if self._active is not None:
                 raise TtalkkakError("이미 부하 시험이 실행 중입니다", 409)
@@ -93,13 +105,26 @@ class LoadTestRunner:
             "replicas": replicas,
             "model": self.model,
             "autoscale_on": autoscale_on,
+            "method": "goodput",
+            "max_users": max_users,
+            "ttft_target_ms": self.ttft_target_ms,
+            "itl_target_ms": self.itl_target_ms,
+            "target_attainment": self.target_attainment,
+            "phase": "search",
             "stages": [],
+            "stop_reason": None,
+            "best_passing_streams": None,
+            "lowest_failing_streams": None,
+            "capacity_streams": None,
             "capacity_tpm": None,
+            "no_capacity_reason": None,
+            "confirm": None,
+            "knee": None,
             "error": None,
         }
         try:
             self._save(record)
-            args = (record, stages, created)
+            args = (record, created)
             if self.sync:
                 self._work(*args)
             else:
@@ -139,20 +164,33 @@ class LoadTestRunner:
         tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1), "utf-8")
         tmp.replace(path)
 
-    def _work(self, record: dict, stages: list[int], created: datetime) -> None:
+    def _work(self, record: dict, created: datetime) -> None:
         prefix = None
         try:
             key = self._issue_key()
             prefix = key[: len(f"tk_{LOADTEST_TENANT}_") + 8]
-            for users in stages:
-                record["stages"].append(self._stage(users, key, record["id"]))
-                self._save(record)
-            tpm = capacity_from_stages(
-                [Stage(**s) for s in record["stages"]], self.ttft_target_ms
+            probes, search = parse_goodput(
+                self._guidellm(record["id"], "search", key, record["max_users"])
             )
-            record["capacity_tpm"] = tpm
-            if not record["autoscale_on"]:
-                self._write_capacity(record, created, tpm)
+            record["stages"] = [p.model_dump() for p in probes]
+            record.update(search)
+            record["knee"] = throughput_knee(probes)
+            best, why = capacity_from_search(probes, search["stop_reason"])
+            record["no_capacity_reason"] = why
+            if best is not None:
+                record["capacity_streams"] = best.users
+                record["capacity_tpm"] = best.tokens_per_min
+                record["phase"] = "confirm"
+                self._save(record)
+                rate = round(best.request_rate * CONFIRM_FACTOR, 3)
+                report = self._guidellm(record["id"], "confirm", key, rate)
+                record["confirm"] = {
+                    **parse_confirm(report, self.target_attainment),
+                    "rate_rps": rate,
+                }
+                if not record["autoscale_on"]:
+                    self._write_capacity(record, created)
+            record["phase"] = "done"
         except subprocess.CalledProcessError as err:
             record["error"] = f"guidellm이 실패했습니다 (종료 코드 {err.returncode})"
         except subprocess.TimeoutExpired:
@@ -182,48 +220,56 @@ class LoadTestRunner:
     def _revoke(self, prefix: str) -> None:
         self.store.revoke_key(prefix)
 
-    def _stage(self, users: int, key: str, test_id: str) -> dict:
-        stage_dir = self.dir / "stages"
-        stage_dir.mkdir(parents=True, exist_ok=True)
-        out = stage_dir / f"{test_id}-{users}.guidellm.json"
+    def _guidellm(self, test_id: str, kind: str, key: str, arg) -> dict:
+        """Run the search (arg = max users) or the open-loop check (arg = rate)."""
+        work = self.dir / "stages"
+        work.mkdir(parents=True, exist_ok=True)
+        out = work / f"{test_id}-{kind}.guidellm.json"
+        common = {
+            "ttft_ms": self.ttft_target_ms,
+            "itl_ms": self.itl_target_ms,
+            "api_key": key,
+        }
+        if kind == "search":
+            cmd = goodput_cmd(
+                self.gateway_url, self.model, DATA, out, **common,
+                attainment=self.target_attainment, max_streams=arg,
+                probe_seconds=PROBE_SECONDS, probe_requests=PROBE_REQUESTS,
+                max_probes=MAX_PROBES,
+            )  # fmt: skip
+            timeout = MAX_PROBES * (PROBE_SECONDS + 30) + 300
+        else:
+            cmd = poisson_cmd(
+                self.gateway_url, self.model, DATA, out, **common,
+                rate=arg, seconds=CONFIRM_SECONDS,
+            )  # fmt: skip
+            timeout = CONFIRM_SECONDS * 4 + 300
         try:
-            return self._run_stage(users, key, out)
+            self.run(cmd, check=True, timeout=timeout)
+            return json.loads(out.read_text(encoding="utf-8"))
         finally:
             out.unlink(missing_ok=True)
 
-    def _run_stage(self, users: int, key: str, out: Path) -> dict:
-        self.run(
-            guidellm_cmd(
-                self.gateway_url, self.model, DATA, out, [users], STAGE_SECONDS, key
-            ),
-            check=True,
-            timeout=STAGE_SECONDS * 4 + 300,
-        )
-        report = json.loads(out.read_text(encoding="utf-8"))
-        (bench,) = report["benchmarks"]
-        (point,) = parse_points({"benchmarks": [bench]})
-        tpm, error_rate = parse_stage_load(bench)
-        return Stage(
-            users=users,
-            ttft_p99_ms=point.ttft_p99_ms,
-            itl_p99_ms=point.itl_p99_ms,
-            output_tok_s=point.output_tok_s,
-            tokens_per_min=tpm,
-            error_rate=error_rate,
-        ).model_dump()
-
-    def _write_capacity(
-        self, record: dict, created: datetime, tpm: float | None
-    ) -> None:
+    def _write_capacity(self, record: dict, created: datetime) -> None:
         if self.kubectl is None:
             raise TtalkkakError("kubectl이 없어 용량 기록을 저장하지 못했습니다")
+        confirm, knee = record["confirm"], record["knee"] or {}
         cap = CapacityRecord(
             loadtest_id=record["id"],
             created_at=created,
             replicas=record["replicas"],
             model=record["model"],
             ttft_target_ms=self.ttft_target_ms,
-            max_tokens_per_min=tpm,
+            max_tokens_per_min=record["capacity_tpm"],
+            method="goodput",
+            target_attainment=self.target_attainment,
+            itl_target_ms=self.itl_target_ms,
+            stop_reason=record["stop_reason"],
+            capacity_streams=record["capacity_streams"],
+            confirmed=confirm["held"],
+            confirm_rate_rps=confirm["rate_rps"],
+            knee_streams=knee.get("streams"),
+            knee_output_tok_s=knee.get("output_tok_s"),
         )
         got = self.kubectl(
             ["get", "configmap", CAPACITY_CONFIGMAP, "-n", self.namespace, "-o", "json"]

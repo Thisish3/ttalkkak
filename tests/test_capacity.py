@@ -241,3 +241,112 @@ def test_corrupt_capacity_raises_korean_error():
         with pytest.raises(TtalkkakError, match="읽을 수 없습니다") as e:
             parse_capacity(raw, "ns1")
         assert "kubectl delete configmap ttalkkak-capacity -n ns1" in str(e.value)
+
+
+def probe(users, tpm, *, passed=True, resolved=True, aborted=False, err=0.0):
+    from ttalkkak.capacity import Probe
+
+    return Probe(
+        users=users, ttft_p99_ms=100, itl_p99_ms=20, output_tok_s=10 * users,
+        tokens_per_min=tpm, error_rate=err, request_rate=users / 2,
+        attainment=1.0 if passed else 0.5, attainment_lower=0.9,
+        attainment_upper=1.0, determined_requests=150, passed=passed,
+        resolved=resolved, aborted=aborted,
+    )  # fmt: skip
+
+
+def test_search_capacity_is_highest_resolved_passing_probe():
+    from ttalkkak.capacity import capacity_from_search
+
+    probes = [probe(1, 100), probe(2, 200), probe(4, 400, passed=False), probe(3, 300)]
+    best, why = capacity_from_search(probes, "converged")
+    assert best.users == 3 and best.tokens_per_min == 300 and why is None
+
+
+def test_search_capacity_skips_unresolved_aborted_and_errored_probes():
+    from ttalkkak.capacity import capacity_from_search
+
+    probes = [
+        probe(1, 100),
+        probe(2, 200, err=0.01),
+        probe(4, 400, resolved=False),
+        probe(8, 800, aborted=True),
+    ]
+    best, _ = capacity_from_search(probes, "constraint_stopped_escalation")
+    assert best.users == 1
+
+
+@pytest.mark.parametrize(
+    "reason,text",
+    [
+        ("indeterminate_at_minimum", "판정할 수 없습니다"),
+        ("objectives_unmet_at_minimum", "1명에서도"),
+    ],
+)
+def test_search_without_capacity_explains_why(reason, text):
+    from ttalkkak.capacity import capacity_from_search
+
+    probes = [probe(1, 100, passed=False, resolved=False)]
+    best, why = capacity_from_search(probes, reason)
+    assert best is None and text in why
+
+
+def test_indeterminate_search_never_yields_capacity_even_with_a_pass():
+    from ttalkkak.capacity import capacity_from_search
+
+    best, why = capacity_from_search([probe(1, 100)], "indeterminate_at_minimum")
+    assert best is None and why
+
+
+def test_search_with_only_unresolved_passes_has_no_capacity():
+    from ttalkkak.capacity import capacity_from_search
+
+    best, why = capacity_from_search([probe(1, 100, resolved=False)], "converged")
+    assert best is None and "요청 수" in why
+
+
+def test_search_with_only_errored_passes_has_no_capacity():
+    from ttalkkak.capacity import capacity_from_search
+
+    best, why = capacity_from_search([probe(1, 100, err=0.1)], "max_streams_reached")
+    assert best is None and "오류" in why
+
+
+def test_old_capacity_record_parses_with_new_fields_defaulted():
+    from ttalkkak.capacity import parse_capacity
+
+    old = (
+        '{"1": {"loadtest_id":"old","created_at":"2026-11-01T00:00:00Z",'
+        '"replicas":1,"model":"m","ttft_target_ms":500,"max_tokens_per_min":10.0}}'
+    )
+    r = parse_capacity(old)[1]
+    assert r.method == "stages" and r.confirmed is None and r.knee_streams is None
+    assert utilization(5, r, 1, "m")["state"] == "ok"
+
+
+def test_goodput_record_round_trips_through_the_configmap_value():
+    from ttalkkak.capacity import merge_capacity, parse_capacity
+
+    r = CapacityRecord(
+        **{
+            **rec().model_dump(),
+            "method": "goodput", "target_attainment": 0.95, "itl_target_ms": 50.0,
+            "stop_reason": "converged", "capacity_streams": 6, "confirmed": True,
+            "confirm_rate_rps": 2.7, "knee_streams": 7.5, "knee_output_tok_s": 480.0,
+        }
+    )  # fmt: skip
+    back = parse_capacity(merge_capacity(None, r))[1]
+    assert back == r and back.method == "goodput" and back.knee_streams == 7.5
+    src = utilization(5, back, 1, "m")["source"]
+    assert src["target_attainment"] == 0.95 and src["capacity_streams"] == 6
+
+
+def test_unconfirmed_record_is_not_used_and_needs_a_new_loadtest():
+    from ttalkkak.capacity import missing_loadtest_counts, missing_loadtest_text
+
+    bad = CapacityRecord(**{**rec(replicas=2).model_dump(), "confirmed": False})
+    u = utilization(100, bad, 2, "m")
+    assert u["state"] == "unconfirmed" and u["pct"] is None
+    records = {1: rec(), 2: bad}
+    assert missing_loadtest_counts(records, 2) == [2]
+    assert missing_loadtest_text(records, 3) == "부하 시험 필요: 2개(확인 실패), 3개"

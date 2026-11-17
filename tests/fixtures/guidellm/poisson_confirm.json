@@ -1,0 +1,66 @@
+{
+ "conclusions": [],
+ "benchmarks": [
+  {
+   "config": {
+    "strategy": {
+     "type_": "poisson",
+     "worker_count": 10,
+     "max_concurrency": 10240,
+     "rate": 192.5,
+     "random_seed": 42
+    },
+    "slo": {
+     "ttft_ms": 80.0,
+     "tpot_ms": null,
+     "e2el_ms": null
+    }
+   },
+   "duration": 8.0,
+   "metrics": {
+    "request_totals": {
+     "successful": 1519,
+     "errored": 0,
+     "incomplete": 28,
+     "total": 1547
+    },
+    "slo_attainment": 0.7531270572745227,
+    "slo_determined_requests": 1519,
+    "requests_per_second": {
+     "successful": {
+      "mean": 189.5
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 6074.875
+     }
+    },
+    "time_to_first_token_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 239.38918113708496
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "percentiles": {
+       "p99": 13.504389793642106
+      }
+     }
+    },
+    "prompt_token_count": {
+     "successful": {
+      "total_sum": 163343.0
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "total_sum": 48608.0
+     }
+    }
+   }
+  }
+ ]
+}

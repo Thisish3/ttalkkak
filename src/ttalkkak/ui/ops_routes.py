@@ -25,7 +25,7 @@ from ttalkkak.capacity import (
 from ttalkkak.cost.model import CostResult
 from ttalkkak.errors import TtalkkakError
 from ttalkkak.live import prom as live_prom
-from ttalkkak.live.loadtest import LoadTestRunner, stages_for
+from ttalkkak.live.loadtest import LoadTestRunner, check_max_users
 from ttalkkak.live.prom import PromError
 from ttalkkak.live.snapshot import ShortCircuit, build_snapshot
 from ttalkkak.ops_api.autoscaler import parse_decisions
@@ -436,7 +436,7 @@ def ops_routes(root: Path, deps, body, bad_request: type[Exception]) -> list[Rou
         users, on = b.get("max_users"), b.get("autoscale_on", False)
         if not isinstance(users, int) or not isinstance(on, bool):
             raise TtalkkakError("max_users는 정수, autoscale_on은 불리언입니다", 400)
-        stages_for(users)
+        check_max_users(users)
         if runner.busy:
             raise TtalkkakError("이미 부하 시험이 실행 중입니다", 409)
         deployment, _ = autoscale_config()

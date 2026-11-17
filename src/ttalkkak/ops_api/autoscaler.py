@@ -122,7 +122,7 @@ def _emit(event: BaseModel) -> None:
 
 def _sample(
     k8s, prom, auto: dict, ns: str, now: datetime, desired: int, ready: int
-) -> tuple[Sample, bool]:
+) -> tuple[Sample, str | None]:
     rows = prom.instant(q.RUNNING)
     model = next((m["model_name"] for m, _ in rows if m.get("model_name")), "")
     tpm = prom.instant(q.TPM)
@@ -138,7 +138,9 @@ def _sample(
         t=now, util_pct=pct, waiting=waiting, ready=ready, desired=desired,
         idle_replicas=idle,
     )  # fmt: skip
-    return sample, record is None
+    if record is None:
+        return sample, "missing"
+    return sample, "unconfirmed" if record.confirmed is False else None
 
 
 def tick(
@@ -157,14 +159,15 @@ def tick(
         deploy = auto["deployment"]
         desired, ready = k8s.get_scale(ns, deploy)
         known = desired
-        sample, no_record = _sample(k8s, prom, auto, ns, now, desired, ready)
+        sample, record_issue = _sample(k8s, prom, auto, ns, now, desired, ready)
         decision, new = decide(st, sample, rules, max_r=max_r)
         if decision.action == "hold" and sample.util_pct is None:
-            reason = (
-                f"용량 기록 없음: 복제본 {desired}개 부하 시험 필요"
-                if no_record
-                else "지표 없음 (요청량 또는 모델 지표를 읽지 못했습니다)"
-            )
+            reason = {
+                "missing": f"용량 기록 없음: 복제본 {desired}개 부하 시험 필요",
+                "unconfirmed": (
+                    f"용량 기록 확인 실패: 복제본 {desired}개 부하 시험 다시 필요"
+                ),
+            }.get(record_issue, "지표 없음 (요청량 또는 모델 지표를 읽지 못했습니다)")
             decision = decision.model_copy(update={"reason": reason})
         if decision.action != "hold":
             k8s.set_scale(ns, deploy, decision.to_replicas)

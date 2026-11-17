@@ -293,6 +293,63 @@ const render = (s) => { put("SNAP", s); run("renderLive(SNAP)"); };
   render(cap);
   has("live-gauge", "p99 ≤ 1초"); has("live-gauge", "2026");
 
+  // Task G: goodput gauge caption and a record that failed the open-loop check
+  const gp = base(); Object.assign(gp.capacity.source, { ttft_target_ms: 1000, target_attainment: 0.95 });
+  render(gp);
+  has("live-gauge", "요청 95 %"); has("live-gauge", "첫 글자 ≤ 1초");
+  const uc = base();
+  Object.assign(uc.capacity, { state: "unconfirmed", pct: null, max_tpm: null, source: null, missing_text: "부하 시험 필요: 2개(확인 실패) " + EVIL });
+  render(uc);
+  has("live-gauge", "확인 실패"); has("live-gauge", 'data-act="goto-loadtest"'); has("live-gauge", "&lt;img");
+  hasNot("live-gauge", "<circle"); hasNot("live-gauge", "알 수 없습니다");
+
+  // Task G: probes in search order, verdicts, stop reason, open-loop result, knee
+  const probe = (users, a, lo, hi, passed, resolved, aborted = false) => ({
+    users, ttft_p99_ms: 100 * users, itl_p99_ms: 5, output_tok_s: 50 * users, tokens_per_min: 1000 * users,
+    error_rate: 0, request_rate: users, attainment: a, attainment_lower: lo, attainment_upper: hi,
+    determined_requests: 150, passed, resolved, aborted });
+  const gRun = {
+    id: "20261117-010000", created_at: "2026-11-17T01:00:00+00:00", replicas: 1, model: "m", autoscale_on: false,
+    method: "goodput", target_attainment: 0.95, ttft_target_ms: 1000, phase: "done", running: false, error: null,
+    stages: [probe(1, 0.986, 0.923, 0.997, true, false), probe(2, 1, 0.972, 1, true, true), probe(4, 0.6875, 0.643, 0.729, false, true),
+             probe(3, 0.949, 0.924, 0.966, false, false), probe(8, 0.99, 0.95, 1, true, true, true)],
+    stop_reason: "converged", best_passing_streams: 2, lowest_failing_streams: 3, capacity_streams: 2, capacity_tpm: 2000,
+    no_capacity_reason: null,
+    confirm: { rate_rps: 1.8, achieved_rps: 1.79, attainment: 0.7531, attainment_lower: 0.731, attainment_upper: 0.774,
+               determined_requests: 1519, error_rate: 0, ttft_p99_ms: 239, held: false, resolved: true },
+    knee: { status: "ok", streams: 2.6, output_tok_s: 150, points: 5, reason: null },
+  };
+  put("GRUNS", [gRun]);
+  run("renderLoadtests(GRUNS)");
+  const lt = els["lt-list"].innerHTML;
+  const order = ["1명", "2명", "4명", "3명", "8명"].map((u) => lt.indexOf(`<td class="num">${u}</td>`));
+  if (order.some((i) => i < 0) || order.some((v, i) => i && v < order[i - 1])) fail("probes not listed in search order: " + order);
+  has("lt-list", "98.6 %"); has("lt-list", "92.3–99.7 %");
+  has("lt-list", "통과"); has("lt-list", "실패"); has("lt-list", "모름"); has("lt-list", "중단됨");
+  has("lt-list", "수렴"); has("lt-list", "확인 실패"); has("lt-list", "75.3 %"); has("lt-list", "1.8 요청/초");
+  has("lt-list", "무릎"); has("lt-list", "2.6명"); has("lt-list", "2,000 토큰/분"); has("lt-list", "동시 사용자 2명");
+  hasNot("lt-list", "undefined"); hasNot("lt-list", "NaN"); hasNot("lt-list", "null");
+  // chart draws probes sorted by users even though they ran out of order
+  const xs = (els["lt-chart"].innerHTML.match(/points="([^"]+)"/) || [])[1].split(" ").map((pt) => parseFloat(pt));
+  if (xs.some((x, i) => i && x < xs[i - 1])) fail("chart polyline not sorted by users: " + xs);
+
+  // held confirm, no knee, indeterminate search, unknown stop reason, hostile strings
+  const held = { ...gRun, id: "b", confirm: { ...gRun.confirm, held: true, attainment: 0.99 }, knee: { status: "no_knee", streams: null, output_tok_s: null, points: 4, reason: "동시 사용자 단계가 4개라 " + EVIL } };
+  const indet = { ...gRun, id: "c", stop_reason: "indeterminate_at_minimum", capacity_tpm: null, capacity_streams: null, confirm: null, knee: null,
+    no_capacity_reason: "판정할 수 없습니다 " + EVIL };
+  const odd2 = { ...gRun, id: "d", stop_reason: EVIL, stages: [{ ...probe(1, 1, 1, 1, true, true), attainment: null, attainment_lower: null }] };
+  put("GRUNS2", [held, indet, odd2]);
+  run("renderLoadtests(GRUNS2)");
+  has("lt-list", "확인 통과"); has("lt-list", "무릎 없음"); has("lt-list", "판정 불가"); has("lt-list", "판정할 수 없습니다");
+  has("lt-list", "&lt;img"); hasNot("lt-list", "<img"); hasNot("lt-list", "NaN"); hasNot("lt-list", "undefined");
+  // progress shows the phase while guidellm runs
+  put("PROG", [{ ...gRun, running: true, phase: "search", stages: [] }]);
+  run("renderLoadtests(PROG)");
+  has("lt-progress", "용량 찾는 중");
+  put("PROG", [{ ...gRun, running: true, phase: "confirm" }]);
+  run("renderLoadtests(PROG)");
+  has("lt-progress", "열린 부하로 확인 중");
+
   put("REALAPI", realApi);
   run("api = REALAPI");
   // M4: browser fetch is aborted after 8 s

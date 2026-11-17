@@ -169,6 +169,9 @@ tbody tr.sel td { background: var(--accent-soft); }
 tbody tr.sel td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .errbox.inline { margin: var(--sp-3) 0 0; }
 .okbox { margin: var(--sp-3) 0 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--ok-soft); color: var(--ok); }
+.lt-detail { margin: var(--sp-2) 0 0; }
+.lt-detail summary { cursor: pointer; }
+.lt-detail > div { margin-top: var(--sp-1); }
 .infobox { margin: var(--sp-3) 0 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--accent-soft); }
 .okbox:empty, .infobox:empty, .errbox:empty { display: none; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-3); }

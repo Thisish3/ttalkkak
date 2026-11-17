@@ -39,7 +39,7 @@
         <div id="live-auto-err"></div>
         <div class="row" id="live-auto"></div>
         <div class="tablewrap"><table><thead><tr><th>시각</th><th>결정</th><th class="num">복제본</th><th>이유</th></tr></thead><tbody id="live-decisions"></tbody></table></div></div>
-      <div class="card" id="lt-card"><header><h2>부하 시험</h2><p>단계별로 동시 사용자를 늘려 첫 글자 p99가 1초 이하인 최대 처리량을 잽니다. 실제 요청을 보내 GPU를 씁니다.</p></header>
+      <div class="card" id="lt-card"><header><h2>부하 시험</h2><p>guidellm의 goodput 탐색으로 요청의 95 %가 첫 글자 1초 안에 오는 가장 높은 동시 사용자 수를 찾고, 그 처리량을 열린 부하(포아송)로 한 번 더 확인합니다. 실제 요청을 보내 GPU를 씁니다.</p></header>
         <div class="row">
           <label class="row">최대 사용자 <input id="lt-users" type="number" min="1" max="100" value="20" style="width:80px" aria-label="최대 사용자"></label>
           <label class="row"><input id="lt-auto" type="checkbox"> 자동 증감 켠 채로 시험</label>

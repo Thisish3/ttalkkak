@@ -2,6 +2,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from ttalkkak.capacity import Probe
 from ttalkkak.chips import ChipConfig, chip_by_name
 from ttalkkak.cost.model import (
     CostResult,
@@ -38,13 +39,9 @@ def guidellm_cmd(
     max_seconds: int,
     api_key: str | None = None,
 ) -> list[str]:
-    target = base_url.removesuffix("/v1")
-    backend = f"kind=openai_http,target={target},model={model}"
-    if api_key:
-        backend += f",api_key={api_key}"
     return [
         "guidellm", "run",
-        "--backend", backend,
+        "--backend", _backend(base_url, model, api_key),
         "--profile", "kind=concurrent",
         "--override", "profile.streams", ",".join(map(str, streams)),
         "--constraint", f"kind=max_duration,seconds={max_seconds}",
@@ -52,6 +49,88 @@ def guidellm_cmd(
         "--tokenizer", f"kind=hf_auto,model={model}",
         "--output", f"kind=json,path={out}",
         "--disable-console-interactive", "--disable-progress",
+    ]  # fmt: skip
+
+
+def _backend(base_url: str, model: str, api_key: str | None) -> str:
+    target = base_url.removesuffix("/v1")
+    backend = f"kind=openai_http,target={target},model={model}"
+    if api_key:
+        backend += f",api_key={api_key}"
+    return backend
+
+
+def _slo(ttft_ms: float, itl_ms: float | None) -> str:
+    slo = {"ttft_ms": ttft_ms}
+    if itl_ms is not None:
+        slo["tpot_ms"] = itl_ms  # guidellm compares tpot_ms with inter-token latency
+    return json.dumps({"kind": "generative", "slo": slo})
+
+
+def _tail(data: str, out: Path, model: str) -> list[str]:
+    return [
+        "--data", data,
+        "--tokenizer", f"kind=hf_auto,model={model}",
+        "--output", f"kind=json,path={out}",
+        "--disable-console-interactive", "--disable-progress",
+    ]  # fmt: skip
+
+
+def goodput_cmd(
+    base_url: str,
+    model: str,
+    data: str,
+    out: Path,
+    *,
+    ttft_ms: float,
+    itl_ms: float | None,
+    attainment: float,
+    max_streams: int,
+    probe_seconds: int,
+    probe_requests: int,
+    max_probes: int,
+    api_key: str | None = None,
+) -> list[str]:
+    """guidellm's goodput search: double concurrency from 1, then bisect.
+
+    Each probe stops after probe_requests processed requests or probe_seconds,
+    whichever comes first.
+    """
+    profile = (
+        f"kind=goodput,target_attainment={attainment},initial_streams=1,"
+        f"max_streams={max_streams},max_probes={max_probes}"
+    )
+    return [
+        "guidellm", "run",
+        "--backend", _backend(base_url, model, api_key),
+        "--profile", profile,
+        "--metrics", _slo(ttft_ms, itl_ms),
+        "--constraint", f"kind=max_duration,seconds={probe_seconds}",
+        "--constraint", f"kind=min_requests,count={probe_requests}",
+        *_tail(data, out, model),
+    ]  # fmt: skip
+
+
+def poisson_cmd(
+    base_url: str,
+    model: str,
+    data: str,
+    out: Path,
+    *,
+    rate: float,
+    ttft_ms: float,
+    itl_ms: float | None,
+    seconds: int,
+    api_key: str | None = None,
+) -> list[str]:
+    """One open-loop run: Poisson arrivals at rate requests/s."""
+    return [
+        "guidellm", "run",
+        "--backend", _backend(base_url, model, api_key),
+        "--profile", f"kind=poisson,rate={rate:g}",
+        "--metrics", _slo(ttft_ms, itl_ms),
+        "--constraint", f"kind=max_duration,seconds={seconds}",
+        *_tail(data, out, model),
     ]  # fmt: skip
 
 
@@ -93,6 +172,120 @@ def parse_stage_load(benchmark: dict) -> tuple[float, float]:
         tokens / seconds * 60 if seconds > 0 else 0.0,
         counts["errored"] / requests if requests else 1.0,
     )
+
+
+def _probe_metrics(b: dict) -> dict:
+    (point,) = parse_points({"benchmarks": [b]})
+    tpm, error_rate = parse_stage_load(b)
+    return {
+        "users": point.streams,
+        "ttft_p99_ms": point.ttft_p99_ms,
+        "itl_p99_ms": point.itl_p99_ms,
+        "output_tok_s": point.output_tok_s,
+        "tokens_per_min": tpm,
+        "error_rate": error_rate,
+        "request_rate": float(_successful(b, "requests_per_second")["mean"]),
+    }
+
+
+def parse_goodput(report: dict) -> tuple[list[Probe], dict]:
+    """Probes in search order and the search outcome of a goodput run."""
+    search = next((c for c in report.get("conclusions") or [] if "probes" in c), None)
+    if search is None:
+        raise TtalkkakError("guidellm 결과에 탐색 결론이 없습니다")
+    benches = report["benchmarks"]
+    found = search["probes"]
+    if len(found) != len(benches) or any(
+        p["streams"] != b["config"]["strategy"].get("streams")
+        for p, b in zip(found, benches)
+    ):
+        raise TtalkkakError("guidellm 결과의 단계와 탐색 기록이 맞지 않습니다")
+    probes = [
+        Probe(
+            **_probe_metrics(b),
+            attainment=p["attainment"],
+            attainment_lower=p["attainment_lower"],
+            attainment_upper=p["attainment_upper"],
+            determined_requests=p["determined_requests"],
+            passed=p["passed"],
+            resolved=p["resolved"],
+            aborted=p.get("aborted", False),
+        )
+        for p, b in zip(found, benches)
+    ]
+    keys = ("stop_reason", "best_passing_streams", "lowest_failing_streams")
+    return probes, {k: search.get(k) for k in keys}
+
+
+def parse_confirm(report: dict, target: float, confidence: float = 0.95) -> dict:
+    """Open-loop result: held = attainment >= target and no errored request."""
+    (b,) = report["benchmarks"]
+    m = b["metrics"]
+    attainment = m.get("slo_attainment")
+    determined = int(m.get("slo_determined_requests") or 0)
+    tpm, error_rate = parse_stage_load(b)
+    lower = upper = None
+    if attainment is not None and determined:
+        from guidellm.utils.statistics import wilson_interval
+
+        lower, upper = wilson_interval(
+            successes=round(attainment * determined),
+            trials=determined,
+            confidence=confidence,
+        )
+    return {
+        "rate_rps": b["config"]["strategy"].get("rate"),
+        "achieved_rps": float(_successful(b, "requests_per_second")["mean"]),
+        "attainment": attainment,
+        "attainment_lower": lower,
+        "attainment_upper": upper,
+        "determined_requests": determined,
+        "error_rate": error_rate,
+        "tokens_per_min": tpm,
+        "ttft_p99_ms": float(
+            _successful(b, "time_to_first_token_ms")["percentiles"]["p99"]
+        ),
+        "held": attainment is not None and attainment >= target and error_rate == 0,
+        "resolved": lower is not None and (lower >= target or upper < target),
+    }
+
+
+KNEE_MIN_POINTS = 5
+
+
+def throughput_knee(probes: list[Probe]) -> dict:
+    """guidellm's throughput-knee fit over the search probes (no extra run)."""
+    used = [p for p in probes if not p.aborted]
+    points = len({p.users for p in used})
+    out = {"status": "no_knee", "streams": None, "output_tok_s": None}
+    out["points"] = points
+    if points < KNEE_MIN_POINTS:
+        out["reason"] = (
+            f"동시 사용자 단계가 {points}개라 무릎을 계산하지 않았습니다 "
+            f"(최소 {KNEE_MIN_POINTS}개)"
+        )
+        return out
+    try:
+        from guidellm.benchmark import analysis
+
+        r = analysis.find_throughput_knee(
+            [p.users for p in used], [p.output_tok_s for p in used]
+        )
+    except (ImportError, ValueError) as err:
+        out.update(status="error", reason=f"무릎 분석을 하지 못했습니다 ({err})")
+        return out
+    out["detail"] = r.reason
+    if r.status != "ok" or r.knee is None:
+        out["reason"] = "처리량 곡선에서 무릎을 찾지 못했습니다"
+        return out
+    at = [p.output_tok_s for p in used if p.users == r.saturation_concurrency]
+    out.update(
+        status="ok",
+        streams=r.knee,
+        output_tok_s=sum(at) / len(at) if at else None,
+        reason=None,
+    )
+    return out
 
 
 def parse_energy_run(report: dict, samples: list[Sample]) -> EnergyRun:

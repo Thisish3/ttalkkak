@@ -293,3 +293,11 @@ def test_no_metrics_reason_is_distinct():
     d, _ = tick(FakeK8s(), NoTpm(), State(), Rules(), T0, NS)
     assert d.action == "hold" and "지표 없음" in d.reason
     assert "용량 기록 없음" not in d.reason
+
+
+def test_record_that_failed_the_open_loop_check_is_not_used():
+    bad = REC.model_copy(update={"method": "goodput", "confirmed": False})
+    k8s = FakeK8s(record=bad)
+    d, _ = tick(k8s, FakeProm(tpm=900.0), State(), Rules(), T0, NS)
+    assert d.action == "hold"
+    assert d.reason == "용량 기록 확인 실패: 복제본 1개 부하 시험 다시 필요"

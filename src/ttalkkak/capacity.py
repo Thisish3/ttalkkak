@@ -18,6 +18,19 @@ class Stage(BaseModel):
     error_rate: float
 
 
+class Probe(Stage):
+    """One concurrency level of guidellm's goodput search."""
+
+    request_rate: float
+    attainment: float
+    attainment_lower: float
+    attainment_upper: float
+    determined_requests: int
+    passed: bool
+    resolved: bool
+    aborted: bool = False
+
+
 class CapacityRecord(BaseModel):
     loadtest_id: str
     created_at: datetime
@@ -25,6 +38,15 @@ class CapacityRecord(BaseModel):
     model: str
     ttft_target_ms: float
     max_tokens_per_min: float | None
+    method: str = "stages"
+    target_attainment: float | None = None
+    itl_target_ms: float | None = None
+    stop_reason: str | None = None
+    capacity_streams: int | None = None
+    confirmed: bool | None = None
+    confirm_rate_rps: float | None = None
+    knee_streams: float | None = None
+    knee_output_tok_s: float | None = None
 
 
 def parse_capacity(
@@ -72,7 +94,12 @@ def capacity_counts(records: dict[int, CapacityRecord]) -> list[int]:
 def missing_loadtest_counts(
     records: dict[int, CapacityRecord], max_replicas: int
 ) -> list[int]:
-    return [n for n in range(1, max_replicas + 1) if n not in records]
+    """Counts with no record, or whose record failed the open-loop check."""
+    return [
+        n
+        for n in range(1, max_replicas + 1)
+        if n not in records or records[n].confirmed is False
+    ]
 
 
 def missing_loadtest_text(
@@ -81,7 +108,9 @@ def missing_loadtest_text(
     missing = missing_loadtest_counts(records, max_replicas)
     if not missing:
         return None
-    return "부하 시험 필요: " + ", ".join(f"{n}개" for n in missing)
+    return "부하 시험 필요: " + ", ".join(
+        f"{n}개(확인 실패)" if n in records else f"{n}개" for n in missing
+    )
 
 
 def capacity_from_stages(stages: list[Stage], target_ms: float) -> float | None:
@@ -89,18 +118,58 @@ def capacity_from_stages(stages: list[Stage], target_ms: float) -> float | None:
     return max(ok, key=lambda s: s.users).tokens_per_min if ok else None
 
 
+_NO_CAPACITY = {
+    "indeterminate_at_minimum": (
+        "요청 수가 적어 가장 낮은 단계에서도 목표 달성 여부를 판정할 수 없습니다. "
+        "단계 시간을 늘려 다시 시험하세요"
+    ),
+    "objectives_unmet_at_minimum": "동시 사용자 1명에서도 목표를 지키지 못했습니다",
+}
+
+
+def capacity_from_search(
+    probes: list[Probe], stop_reason: str | None
+) -> tuple[Probe | None, str | None]:
+    """Highest probe that passed with a resolved interval, no abort and no errors.
+
+    Returns (probe, None) or (None, Korean reason). Searches that stopped at the
+    minimum never give a capacity.
+    """
+    if stop_reason in _NO_CAPACITY:
+        return None, _NO_CAPACITY[stop_reason]
+    ok = [
+        p
+        for p in probes
+        if p.passed and p.resolved and not p.aborted and p.error_rate == 0
+    ]
+    if ok:
+        return max(ok, key=lambda p: p.users), None
+    passed = [p for p in probes if p.passed and not p.aborted]
+    if any(p.error_rate == 0 and not p.resolved for p in passed):
+        return None, (
+            "목표를 지킨 단계가 있지만 요청 수가 적어 확정하지 못했습니다. "
+            "단계 시간을 늘려 다시 시험하세요"
+        )
+    if passed:
+        return None, "목표를 지킨 단계마다 오류 요청이 있었습니다"
+    return None, "목표를 지킨 단계가 없습니다"
+
+
 def utilization(
     now_tpm: float, rec: CapacityRecord | None, replicas: int, model: str
 ) -> dict:
     usable = (
         rec is not None
+        and rec.confirmed is not False
         and rec.max_tokens_per_min
         and rec.replicas == replicas
         and rec.model == model
     )
     if not usable:
         return {
-            "state": "needs_loadtest",
+            "state": "unconfirmed"
+            if rec is not None and rec.confirmed is False
+            else "needs_loadtest",
             "pct": None,
             "now_tpm": now_tpm,
             "max_tpm": None,
@@ -117,6 +186,10 @@ def utilization(
             "replicas": rec.replicas,
             "model": rec.model,
             "ttft_target_ms": rec.ttft_target_ms,
+            "target_attainment": rec.target_attainment,
+            "capacity_streams": rec.capacity_streams,
+            "confirmed": rec.confirmed,
+            "knee_streams": rec.knee_streams,
         },
     }
 
